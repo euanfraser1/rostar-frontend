@@ -1,3 +1,9 @@
+# Rostar frontend
+
+Rostar’s React + Vite app for the Business Hub (admin) and artist flows. **Product context, API surface, and current UI layout** (red header, logo at `public/rostar-logo.png`, centered content column) are in **`README_CONTEXT.md`** in this folder.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

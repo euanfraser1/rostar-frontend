@@ -1,193 +1,258 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiGet } from "../api/http";
+import { useNavigate } from "react-router-dom";
+import { apiGet, apiPatch } from "../api/http";
 
-type Booking = {
+type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
+
+type GigEvent = {
   id: string;
-  dateTime: string;
-  notes?: string | null;
-  artist: { id: string; name: string };
-  venue: { id: string; name: string; postcode?: string | null };
+  startDateTime: string;
+  endDateTime: string;
+  status: EventStatus;
+  venueFee: string | null;
+  artistFee: string | null;
+  rostarCut: string | null;
+  notes: string | null;
+  venue: { id: string; name: string; postcode: string };
+  artist: { id: string; name: string } | null;
 };
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
+type Artist = { id: string; name: string };
 
-/** Local date key YYYY-MM-DD (local time, not UTC) */
-function localDateKey(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
+const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
+  UNBOOKED:  { label: "Unbooked",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
+  OFFERED:   { label: "Offered",   bg: "#fff4cc", color: "#7a5700", dot: "#fdbc00" },
+  CONFIRMED: { label: "Confirmed", bg: "#fde8e8", color: "#a10000", dot: "#a10000" },
+};
 
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
+const STATUS_SORT_ORDER: Record<EventStatus, number> = {
+  UNBOOKED: 0,
+  OFFERED: 1,
+  CONFIRMED: 2,
+};
 
-function daysInMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function localDateKey(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function daysInMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); }
+function mondayIndex(day: number) { return (day + 6) % 7; }
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
-
-/** Monday=0 ... Sunday=6 */
-function mondayIndex(day: number) {
-  // JS: Sunday=0 ... Saturday=6
-  // Convert so Monday=0 ... Sunday=6
-  return (day + 6) % 7;
+function formatFee(fee: string | null) {
+  if (!fee) return null;
+  return `£${Number(fee).toFixed(2)}`;
 }
 
 export default function Calendar() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const navigate = useNavigate();
+
+  const [events, setEvents] = useState<GigEvent[]>([]);
+  const [artists, setArtists] = useState<Artist[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Month we’re viewing
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
+  // Assign-artist inline form state
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assignArtistId, setAssignArtistId] = useState("");
+  const [assignStatus, setAssignStatus] = useState<EventStatus>("CONFIRMED");
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
+  // Load artists once (for the assign dropdown)
   useEffect(() => {
-    apiGet<Booking[]>("/bookings")
-      .then((data) => {
-        // sort by dateTime for nicer display
-        const sorted = [...data].sort(
-          (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
-        );
-        setBookings(sorted);
-      })
-      .catch((e) => setError(String(e)));
+    apiGet<Artist[]>("/artists")
+      .then((data) => setArtists([...data].sort((a, b) => a.name.localeCompare(b.name))))
+      .catch(() => {}); // non-critical; dropdown just stays empty
   }, []);
 
-  const bookingsByDay = useMemo(() => {
-    const map = new Map<string, Booking[]>();
-    for (const b of bookings) {
-      const key = localDateKey(new Date(b.dateTime));
+  // Load events for the viewed month
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const from = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    const to = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
+    const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+
+    apiGet<GigEvent[]>(`/events?${params}`)
+      .then((data) => {
+        setEvents([...data].sort(
+          (a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
+        ));
+        setLoading(false);
+      })
+      .catch((e) => { setError(String(e)); setLoading(false); });
+  }, [viewDate]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, GigEvent[]>();
+    for (const ev of events) {
+      const key = localDateKey(new Date(ev.startDateTime));
       const arr = map.get(key) ?? [];
-      arr.push(b);
+      arr.push(ev);
       map.set(key, arr);
     }
+    for (const [key, arr] of map) {
+      map.set(key, arr.sort(
+        (a, b) =>
+          STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status] ||
+          new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
+      ));
+    }
     return map;
-  }, [bookings]);
+  }, [events]);
 
   const monthStart = startOfMonth(viewDate);
   const monthDays = daysInMonth(viewDate);
-  const leadingBlanks = mondayIndex(monthStart.getDay()); // number of empty cells before day 1
+  const leadingBlanks = mondayIndex(monthStart.getDay());
   const monthLabel = viewDate.toLocaleString(undefined, { month: "long", year: "numeric" });
+  const todayKey = localDateKey(new Date());
+  const selectedEvents = selectedDayKey ? eventsByDay.get(selectedDayKey) ?? [] : [];
 
-  const selectedBookings = selectedDayKey ? bookingsByDay.get(selectedDayKey) ?? [] : [];
+  function prevMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)); setSelectedDayKey(null); }
+  function nextMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)); setSelectedDayKey(null); }
+  function goToday() { setViewDate(new Date()); setSelectedDayKey(localDateKey(new Date())); }
 
-  function prevMonth() {
-    setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-    setSelectedDayKey(null);
+  function eventLabel(ev: GigEvent) {
+    if (ev.status === "CONFIRMED" && ev.artist) return ev.artist.name;
+    return ev.venue.name;
   }
-  function nextMonth() {
-    setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-    setSelectedDayKey(null);
+
+  function openAssign(ev: GigEvent) {
+    setAssigningId(ev.id);
+    setAssignArtistId(ev.artist?.id ?? "");
+    setAssignStatus(ev.status === "UNBOOKED" ? "CONFIRMED" : ev.status);
+    setAssignError(null);
   }
-  function goToday() {
-    setViewDate(new Date());
-    setSelectedDayKey(localDateKey(new Date()));
+
+  function closeAssign() {
+    setAssigningId(null);
+    setAssignError(null);
+  }
+
+  async function saveAssign(eventId: string) {
+    setAssignError(null);
+    if (!assignArtistId) {
+      setAssignError("Please select an artist.");
+      return;
+    }
+    setAssignSaving(true);
+
+    const result = await apiPatch<GigEvent, Record<string, unknown>>(
+      `/events/${eventId}`,
+      { artistId: assignArtistId, status: assignStatus }
+    );
+
+    setAssignSaving(false);
+
+    if (!result.ok) {
+      setAssignError(result.message);
+      return;
+    }
+
+    // Update the event in local state so the calendar refreshes instantly
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
+    setAssigningId(null);
+  }
+
+  async function clearArtist(eventId: string) {
+    const result = await apiPatch<GigEvent, Record<string, unknown>>(
+      `/events/${eventId}`,
+      { artistId: null, status: "UNBOOKED" }
+    );
+    if (result.ok) {
+      setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
+    }
   }
 
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Calendar</h1>
 
-      {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-        <button onClick={prevMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>
-          ←
-        </button>
-        <button onClick={goToday} style={{ padding: "6px 10px", borderRadius: 8 }}>
-          Today
-        </button>
-        <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>
-          →
-        </button>
-
-        <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+        {(Object.keys(STATUS_CONFIG) as EventStatus[]).map((s) => {
+          const cfg = STATUS_CONFIG[s];
+          return (
+            <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: cfg.dot }} />
+              {cfg.label}
+            </div>
+          );
+        })}
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gap: 8,
-        }}
-      >
+      {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
+
+      {/* Nav */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <button onClick={prevMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>←</button>
+        <button onClick={goToday} style={{ padding: "6px 10px", borderRadius: 8 }}>Today</button>
+        <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>→</button>
+        <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
+        {loading && <span style={{ marginLeft: 8, fontSize: 13, opacity: 0.6 }}>Loading…</span>}
+      </div>
+
+      {/* Month grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} style={{ fontSize: 12, opacity: 0.7, padding: "0 4px" }}>
-            {d}
-          </div>
+          <div key={d} style={{ fontSize: 12, opacity: 0.6, padding: "0 4px", fontWeight: 600 }}>{d}</div>
         ))}
 
-        {/* Leading blanks */}
         {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div
-            key={`blank-${i}`}
-            style={{
-              minHeight: 96,
-              border: "1px solid #eee",
-              borderRadius: 10,
-              background: "#fafafa",
-            }}
-          />
+          <div key={`blank-${i}`} style={{ minHeight: 96, border: "1px solid #eee", borderRadius: 10, background: "#fafafa" }} />
         ))}
 
-        {/* Day cells */}
         {Array.from({ length: monthDays }).map((_, i) => {
           const day = i + 1;
           const cellDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
           const key = localDateKey(cellDate);
-          const dayBookings = bookingsByDay.get(key) ?? [];
+          const dayEvents = eventsByDay.get(key) ?? [];
           const isSelected = selectedDayKey === key;
+          const isToday = key === todayKey;
 
           return (
             <button
               key={key}
-              onClick={() => setSelectedDayKey(key)}
+              onClick={() => { setSelectedDayKey(key); setAssigningId(null); }}
               style={{
-                textAlign: "left",
-                minHeight: 96,
-                padding: 10,
-                borderRadius: 10,
-                border: isSelected ? "2px solid #333" : "1px solid #eee",
-                background: "#fff",
-                cursor: "pointer",
+                textAlign: "left", minHeight: 96, padding: 8, borderRadius: 10,
+                border: isSelected ? "2px solid #a10000" : isToday ? "2px solid #555" : "1px solid #eee",
+                background: "#fff", cursor: "pointer",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <strong>{day}</strong>
-                {dayBookings.length > 0 && (
-                  <span style={{ fontSize: 12, opacity: 0.8 }}>
-                    {dayBookings.length} booking{dayBookings.length === 1 ? "" : "s"}
-                  </span>
-                )}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <strong style={{
+                  fontSize: 13, background: isToday ? "#a10000" : "transparent",
+                  color: isToday ? "#fff" : "inherit", borderRadius: "50%",
+                  width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {day}
+                </strong>
+                {dayEvents.length > 0 && <span style={{ fontSize: 11, opacity: 0.6 }}>{dayEvents.length}</span>}
               </div>
-
-              <div style={{ display: "grid", gap: 4 }}>
-                {dayBookings.slice(0, 2).map((b) => {
-                  const t = new Date(b.dateTime).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
+              <div style={{ display: "grid", gap: 3 }}>
+                {dayEvents.slice(0, 2).map((ev) => {
+                  const cfg = STATUS_CONFIG[ev.status];
                   return (
                     <div
-                      key={b.id}
+                      key={ev.id}
                       style={{
-                        fontSize: 12,
-                        padding: "4px 6px",
-                        borderRadius: 8,
-                        background: "#f6f6f6",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        fontSize: 11, padding: "3px 6px", borderRadius: 6,
+                        background: cfg.bg, color: cfg.color,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        borderLeft: `3px solid ${cfg.dot}`,
                       }}
-                      title={`${t} — ${b.artist.name} @ ${b.venue.name}`}
+                      title={`${formatTime(ev.startDateTime)} — ${eventLabel(ev)} [${ev.status}]`}
                     >
-                      {t} — {b.artist.name}
+                      {formatTime(ev.startDateTime)} {eventLabel(ev)}
                     </div>
                   );
                 })}
-                {dayBookings.length > 2 && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>+{dayBookings.length - 2} more</div>
-                )}
+                {dayEvents.length > 2 && <div style={{ fontSize: 11, opacity: 0.6 }}>+{dayEvents.length - 2} more</div>}
               </div>
             </button>
           );
@@ -195,31 +260,185 @@ export default function Calendar() {
       </div>
 
       {/* Day detail panel */}
-      <div style={{ marginTop: 16 }}>
-        <h2 style={{ marginBottom: 8, fontSize: 18 }}>
-          {selectedDayKey ? `Bookings on ${selectedDayKey}` : "Select a day"}
-        </h2>
+      <div style={{ marginTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>
+            {selectedDayKey
+              ? `Events on ${new Date(selectedDayKey + "T00:00:00").toLocaleDateString(undefined, {
+                  weekday: "long", day: "numeric", month: "long", year: "numeric",
+                })}`
+              : "Select a day"}
+          </h2>
+          {selectedDayKey && (
+            <button
+              onClick={() => navigate(`/events/new?date=${selectedDayKey}`)}
+              style={{
+                padding: "5px 14px", borderRadius: 8, background: "#a10000",
+                color: "#fff", border: "none", fontWeight: 600, fontSize: 13, cursor: "pointer",
+              }}
+            >
+              + Add slot
+            </button>
+          )}
+        </div>
 
-        {!selectedDayKey && <p>Click a day in the calendar to see full details.</p>}
+        {!selectedDayKey && <p style={{ opacity: 0.6 }}>Click a day in the calendar to see full details.</p>}
+        {selectedDayKey && selectedEvents.length === 0 && <p style={{ opacity: 0.6 }}>No events for this day.</p>}
 
-        {selectedDayKey && selectedBookings.length === 0 && <p>No bookings for this day.</p>}
+        {selectedEvents.length > 0 && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {selectedEvents.map((ev) => {
+              const cfg = STATUS_CONFIG[ev.status];
+              const isAssigning = assigningId === ev.id;
 
-        {selectedDayKey && selectedBookings.length > 0 && (
-          <ul style={{ paddingLeft: 18 }}>
-            {selectedBookings.map((b) => (
-              <li key={b.id} style={{ marginBottom: 8 }}>
-                <strong>
-                  {new Date(b.dateTime).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </strong>{" "}
-                — {b.artist.name} @ {b.venue.name}
-                {b.venue.postcode ? ` (${b.venue.postcode})` : ""}
-                {b.notes ? ` — ${b.notes}` : ""}
-              </li>
-            ))}
-          </ul>
+              return (
+                <div
+                  key={ev.id}
+                  style={{
+                    padding: "12px 16px", borderRadius: 10,
+                    background: cfg.bg, borderLeft: `4px solid ${cfg.dot}`,
+                  }}
+                >
+                  {/* Header row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                    <div>
+                      <span style={{ fontWeight: 600, fontSize: 15 }}>
+                        {formatTime(ev.startDateTime)} – {formatTime(ev.endDateTime)}
+                      </span>
+                      <span style={{
+                        marginLeft: 10, fontSize: 11, padding: "2px 8px", borderRadius: 20,
+                        background: cfg.dot, color: "#fff", fontWeight: 600,
+                        textTransform: "uppercase", letterSpacing: "0.05em",
+                      }}>
+                        {cfg.label}
+                      </span>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {!isAssigning && (
+                        <button
+                          onClick={() => openAssign(ev)}
+                          style={{
+                            padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                            background: "#a10000", color: "#fff", border: "none", cursor: "pointer",
+                          }}
+                        >
+                          {ev.artist ? "Reassign" : "Assign artist"}
+                        </button>
+                      )}
+                      {!isAssigning && ev.artist && (
+                        <button
+                          onClick={() => clearArtist(ev.id)}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6, fontSize: 12,
+                            background: "transparent", color: "#a10000",
+                            border: "1px solid #a10000", cursor: "pointer",
+                          }}
+                        >
+                          Unassign
+                        </button>
+                      )}
+                      {isAssigning && (
+                        <button
+                          onClick={closeAssign}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6, fontSize: 12,
+                            background: "transparent", border: "1px solid #888",
+                            color: "#555", cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Event details */}
+                  <div style={{ fontSize: 14, display: "grid", gap: 3 }}>
+                    <div>
+                      <span style={{ opacity: 0.6 }}>Venue: </span>
+                      <strong>{ev.venue.name}</strong>
+                      {ev.venue.postcode && <span style={{ opacity: 0.6 }}> ({ev.venue.postcode})</span>}
+                    </div>
+                    <div>
+                      <span style={{ opacity: 0.6 }}>Artist: </span>
+                      {ev.artist
+                        ? <strong>{ev.artist.name}</strong>
+                        : <em style={{ opacity: 0.5 }}>Unassigned</em>}
+                    </div>
+                    {(ev.venueFee || ev.artistFee || ev.rostarCut) && (
+                      <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap" }}>
+                        {ev.venueFee && <span style={{ opacity: 0.8 }}>Venue fee: <strong>{formatFee(ev.venueFee)}</strong></span>}
+                        {ev.artistFee && <span style={{ opacity: 0.8 }}>Artist fee: <strong>{formatFee(ev.artistFee)}</strong></span>}
+                        {ev.rostarCut && <span style={{ opacity: 0.8 }}>Rostar cut: <strong>{formatFee(ev.rostarCut)}</strong></span>}
+                      </div>
+                    )}
+                    {ev.notes && (
+                      <div style={{ marginTop: 4, opacity: 0.8 }}>
+                        <span style={{ opacity: 0.7 }}>Notes: </span>{ev.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline assign form */}
+                  {isAssigning && (
+                    <div style={{
+                      marginTop: 12, padding: "12px 14px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.7)", display: "grid", gap: 10,
+                    }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>Assign artist</div>
+
+                      {assignError && (
+                        <p style={{ margin: 0, color: "crimson", fontSize: 13 }}>{assignError}</p>
+                      )}
+
+                      <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                        Artist
+                        <select
+                          value={assignArtistId}
+                          onChange={(e) => setAssignArtistId(e.target.value)}
+                          disabled={assignSaving}
+                          style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc", fontSize: 13 }}
+                        >
+                          <option value="">Select an artist…</option>
+                          {artists.map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                        Set status to
+                        <select
+                          value={assignStatus}
+                          onChange={(e) => setAssignStatus(e.target.value as EventStatus)}
+                          disabled={assignSaving}
+                          style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc", fontSize: 13 }}
+                        >
+                          <option value="OFFERED">Offered</option>
+                          <option value="CONFIRMED">Confirmed</option>
+                        </select>
+                      </label>
+
+                      <button
+                        onClick={() => saveAssign(ev.id)}
+                        disabled={assignSaving}
+                        style={{
+                          padding: "7px 18px", borderRadius: 6, fontWeight: 600, fontSize: 13,
+                          background: assignSaving ? "#999" : "#a10000",
+                          color: "#fff", border: "none", cursor: assignSaving ? "not-allowed" : "pointer",
+                          justifySelf: "start",
+                        }}
+                      >
+                        {assignSaving ? "Saving…" : "Confirm"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
