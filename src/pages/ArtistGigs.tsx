@@ -1,103 +1,235 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api/http";
-import type { AuthUser } from "../api/auth";
-import { fetchCurrentUser } from "../api/auth";
 
-type EventWithRelations = {
+type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
+
+type GigEvent = {
   id: string;
   startDateTime: string;
   endDateTime: string;
-  status: "UNBOOKED" | "OFFERED" | "CONFIRMED";
-  venue: {
-    id: string;
-    name: string;
-    postcode: string;
-  };
+  status: EventStatus;
+  artistFee: string | null;
+  notes: string | null;
+  venue: { id: string; name: string; postcode: string };
 };
 
+const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
+  UNBOOKED:  { label: "Unbooked",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
+  OFFERED:   { label: "Offered",   bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
+  CONFIRMED: { label: "Confirmed", bg: "#fde8e8", color: "#a10000", dot: "#a10000" },
+};
+
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+function localDateKey(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function daysInMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); }
+function mondayIndex(day: number) { return (day + 6) % 7; }
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+function formatFee(fee: string | null) {
+  if (!fee) return null;
+  return `£${Number(fee).toFixed(2)}`;
+}
+
 export default function ArtistGigs() {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [events, setEvents] = useState<EventWithRelations[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<GigEvent[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      const current = await fetchCurrentUser();
-      if (!mounted) return;
-      if (!current) {
-        setError("Not authenticated");
-        setLoading(false);
-        return;
-      }
-      setUser(current);
-      try {
-        const data = await apiGet<EventWithRelations[]>("/events");
-        if (!mounted) return;
-        setEvents(data);
-      } catch (e) {
-        if (!mounted) return;
-        setError(String(e));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const [viewDate, setViewDate] = useState(() => new Date());
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
-  if (loading) return <div>Loading gigs...</div>;
-  if (error) return <div style={{ color: "red" }}>{error}</div>;
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const from = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    const to = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
+    const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+
+    apiGet<GigEvent[]>(`/events?${params}`)
+      .then((data) => {
+        setEvents([...data].sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()));
+        setLoading(false);
+      })
+      .catch((e) => { setError(String(e)); setLoading(false); });
+  }, [viewDate]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, GigEvent[]>();
+    for (const ev of events) {
+      const key = localDateKey(new Date(ev.startDateTime));
+      const arr = map.get(key) ?? [];
+      arr.push(ev);
+      map.set(key, arr);
+    }
+    return map;
+  }, [events]);
+
+  const monthStart = startOfMonth(viewDate);
+  const monthDays = daysInMonth(viewDate);
+  const leadingBlanks = mondayIndex(monthStart.getDay());
+  const monthLabel = viewDate.toLocaleString(undefined, { month: "long", year: "numeric" });
+  const todayKey = localDateKey(new Date());
+  const selectedEvents = selectedDayKey ? eventsByDay.get(selectedDayKey) ?? [] : [];
+
+  function prevMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)); setSelectedDayKey(null); }
+  function nextMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)); setSelectedDayKey(null); }
+  function goToday() { setViewDate(new Date()); setSelectedDayKey(localDateKey(new Date())); }
 
   return (
     <div>
-      <h1>My Gigs</h1>
-      {user && (
-        <p style={{ fontSize: 14, color: "#555" }}>
-          Logged in as {user.email}
-        </p>
-      )}
-      {events.length === 0 ? (
-        <p>No gigs found.</p>
-      ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 800 }}>
-          <thead>
-            <tr>
-              <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Date</th>
-              <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Time</th>
-              <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Venue</th>
-              <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Postcode</th>
-              <th style={{ borderBottom: "1px solid #ccc", textAlign: "left", padding: 8 }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((ev) => {
-              const start = new Date(ev.startDateTime);
-              const end = new Date(ev.endDateTime);
+      <h1 style={{ marginTop: 0 }}>My Gigs</h1>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: "#5a82c4" }} />
+          Offered
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: "#a10000" }} />
+          Confirmed
+        </div>
+      </div>
+
+      {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
+
+      {/* Month nav */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+        <button onClick={prevMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>←</button>
+        <button onClick={goToday} style={{ padding: "6px 10px", borderRadius: 8 }}>Today</button>
+        <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>→</button>
+        <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
+        {loading && <span style={{ marginLeft: 8, fontSize: 13, opacity: 0.6 }}>Loading…</span>}
+      </div>
+
+      {/* Month grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+          <div key={d} style={{ fontSize: 12, opacity: 0.6, padding: "0 4px", fontWeight: 600 }}>{d}</div>
+        ))}
+
+        {Array.from({ length: leadingBlanks }).map((_, i) => (
+          <div key={`blank-${i}`} style={{ minHeight: 96, border: "1px solid #eee", borderRadius: 10, background: "#fafafa" }} />
+        ))}
+
+        {Array.from({ length: monthDays }).map((_, i) => {
+          const day = i + 1;
+          const cellDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+          const key = localDateKey(cellDate);
+          const dayEvents = eventsByDay.get(key) ?? [];
+          const isSelected = selectedDayKey === key;
+          const isToday = key === todayKey;
+
+          return (
+            <button
+              key={key}
+              onClick={() => setSelectedDayKey(key)}
+              style={{
+                textAlign: "left", minHeight: 96, padding: 8, borderRadius: 10,
+                border: isSelected ? "2px solid #a10000" : isToday ? "2px solid #555" : "1px solid #eee",
+                background: "#fff", cursor: "pointer",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <strong style={{
+                  fontSize: 13, background: isToday ? "#a10000" : "transparent",
+                  color: isToday ? "#fff" : "inherit", borderRadius: "50%",
+                  width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {day}
+                </strong>
+                {dayEvents.length > 0 && <span style={{ fontSize: 11, opacity: 0.6 }}>{dayEvents.length}</span>}
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                {dayEvents.slice(0, 2).map((ev) => {
+                  const cfg = STATUS_CONFIG[ev.status];
+                  return (
+                    <div
+                      key={ev.id}
+                      style={{
+                        fontSize: 11, padding: "3px 6px", borderRadius: 6,
+                        background: cfg.bg, color: cfg.color,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        borderLeft: `3px solid ${cfg.dot}`,
+                      }}
+                      title={`${formatTime(ev.startDateTime)} — ${ev.venue.name} [${ev.status}]`}
+                    >
+                      {formatTime(ev.startDateTime)} {ev.venue.name}
+                    </div>
+                  );
+                })}
+                {dayEvents.length > 2 && <div style={{ fontSize: 11, opacity: 0.6 }}>+{dayEvents.length - 2} more</div>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Day detail panel */}
+      <div style={{ marginTop: 20 }}>
+        <h2 style={{ margin: "0 0 10px 0", fontSize: 18 }}>
+          {selectedDayKey
+            ? `${new Date(selectedDayKey + "T00:00:00").toLocaleDateString(undefined, {
+                weekday: "long", day: "numeric", month: "long", year: "numeric",
+              })}`
+            : "Select a day"}
+        </h2>
+
+        {!selectedDayKey && <p style={{ opacity: 0.6 }}>Click a day to see full details.</p>}
+        {selectedDayKey && selectedEvents.length === 0 && <p style={{ opacity: 0.6 }}>No gigs on this day.</p>}
+
+        {selectedEvents.length > 0 && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {selectedEvents.map((ev) => {
+              const cfg = STATUS_CONFIG[ev.status];
               return (
-                <tr key={ev.id}>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {start.toLocaleDateString()}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} –{" "}
-                    {end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{ev.venue.name}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{ev.venue.postcode}</td>
-                  <td style={{ borderBottom: "1px solid #1px solid #eee", padding: 8 }}>{ev.status}</td>
-                </tr>
+                <div
+                  key={ev.id}
+                  style={{
+                    padding: "14px 16px", borderRadius: 10, maxWidth: 540,
+                    background: cfg.bg, borderLeft: `4px solid ${cfg.dot}`,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>
+                      {formatTime(ev.startDateTime)} – {formatTime(ev.endDateTime)}
+                    </span>
+                    <span style={{
+                      fontSize: 11, padding: "2px 8px", borderRadius: 20,
+                      background: cfg.dot, color: "#fff", fontWeight: 600,
+                      textTransform: "uppercase", letterSpacing: "0.05em",
+                    }}>
+                      {cfg.label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 14, display: "grid", gap: 4 }}>
+                    <div>
+                      <span style={{ opacity: 0.6 }}>Venue: </span>
+                      <strong>{ev.venue.name}</strong>
+                      {ev.venue.postcode && (
+                        <span style={{ opacity: 0.6 }}> · {ev.venue.postcode}</span>
+                      )}
+                    </div>
+                    {ev.artistFee && (
+                      <div>
+                        <span style={{ opacity: 0.6 }}>Fee: </span>
+                        <strong>{formatFee(ev.artistFee)}</strong>
+                      </div>
+                    )}
+                    {ev.notes && (
+                      <div style={{ marginTop: 4, opacity: 0.8 }}>
+                        <span style={{ opacity: 0.7 }}>Notes: </span>{ev.notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-

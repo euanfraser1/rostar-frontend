@@ -161,6 +161,13 @@ function ArtistRoute({ children }: { children: JSX.Element }) {
   if (auth.user.role !== "ARTIST") {
     return <div>Not authorised</div>;
   }
+  if (auth.user.artistId === null) {
+    return (
+      <div style={{ padding: 24, color: "#555" }}>
+        Your account is not linked to an artist profile. Please contact Rostar.
+      </div>
+    );
+  }
   return children;
 }
 
