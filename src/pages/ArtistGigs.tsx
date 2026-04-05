@@ -128,7 +128,7 @@ export default function ArtistGigs() {
               onClick={() => setSelectedDayKey(key)}
               style={{
                 textAlign: "left", minHeight: 96, padding: 8, borderRadius: 10,
-                border: isSelected ? "2px solid #a10000" : isToday ? "2px solid #555" : "1px solid #eee",
+                border: isSelected ? "2px solid #a10000" : "1px solid #eee",
                 background: "#fff", cursor: "pointer",
               }}
             >
