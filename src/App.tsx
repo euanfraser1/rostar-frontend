@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, Outlet } from "react-router-dom";
 import Venues from "./pages/Venues";
 import Artists from "./pages/Artists";
 import Calendar from "./pages/Calendar";
@@ -10,28 +10,15 @@ import ArtistUnavailability from "./pages/ArtistUnavailability";
 import VenueCalendar from "./pages/VenueCalendar";
 import Invoices from "./pages/Invoices";
 import { fetchCurrentUser, type AuthUser, logout } from "./api/auth";
+import { apiGet } from "./api/http";
 
-
-const headerLinkStyle = ({ isActive }: { isActive: boolean }) => ({
-  textDecoration: "none",
-  padding: "10px 16px",
-  borderRadius: 8,
-  background: isActive ? "rgba(255,255,255,0.15)" : "transparent",
-  color: "#fff",
-  display: "flex",
-  flexDirection: "column" as const,
-  alignItems: "center",
-  gap: 5,
-  fontSize: 13,
-  fontWeight: 500,
-  minWidth: 72,
-});
+// ── Icons ─────────────────────────────────────────────────────────────────────
 
 function NavIcon({ children }: { children: React.ReactNode }) {
   return (
     <svg
-      width="26"
-      height="26"
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -101,68 +88,325 @@ function ArtistsIcon() {
   );
 }
 
+function UnavailabilityIcon() {
+  return (
+    <NavIcon>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <line x1="9" y1="15" x2="15" y2="15" />
+    </NavIcon>
+  );
+}
+
+// ── Upcoming events sidebar widget ────────────────────────────────────────────
+
+type SidebarEvent = {
+  id: string;
+  startDateTime: string;
+  status: "UNBOOKED" | "OFFERED" | "CONFIRMED";
+  venue: { id: string; name: string };
+  artist: { id: string; name: string } | null;
+};
+
+const SIDEBAR_EVENT_DOT: Record<SidebarEvent["status"], string> = {
+  UNBOOKED: "#5a82c4",
+  OFFERED:  "#fdbc00",
+  CONFIRMED: "#a10000",
+};
+
+function UpcomingEvents() {
+  const [events, setEvents] = useState<SidebarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const now = new Date().toISOString();
+    const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    const params = new URLSearchParams({ from: now, to: future });
+    apiGet<SidebarEvent[]>(`/events?${params}`)
+      .then((data) => {
+        const sorted = [...data].sort(
+          (a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
+        );
+        setEvents(sorted.slice(0, 5));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{
+        height: 1, background: "#e5e7eb", margin: "8px 4px 14px",
+      }} />
+      <div style={{
+        fontSize: 11, fontWeight: 600, color: "#9ca3af",
+        textTransform: "uppercase", letterSpacing: "0.06em",
+        padding: "0 4px", marginBottom: 8,
+      }}>
+        Upcoming
+      </div>
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "#9ca3af", padding: "0 4px" }}>Loading…</div>
+      )}
+
+      {!loading && events.length === 0 && (
+        <div style={{ fontSize: 12, color: "#9ca3af", padding: "0 4px" }}>No upcoming events</div>
+      )}
+
+      {!loading && events.length > 0 && (
+        <div style={{ display: "grid", gap: 5 }}>
+          {events.map((ev) => {
+            const d = new Date(ev.startDateTime);
+            const label = ev.status === "CONFIRMED" && ev.artist
+              ? ev.artist.name
+              : ev.venue.name;
+            const dot = SIDEBAR_EVENT_DOT[ev.status];
+            return (
+              <div
+                key={ev.id}
+                style={{
+                  padding: "7px 10px", borderRadius: 8,
+                  background: "#f9fafb", borderLeft: `3px solid ${dot}`,
+                }}
+              >
+                <div style={{
+                  fontWeight: 600, fontSize: 12, color: "#374151",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                  {d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                  {" · "}
+                  {d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type AuthState =
   | { status: "loading" }
   | { status: "unauthenticated" }
   | { status: "authenticated"; user: AuthUser };
 
-function AdminRoute({ children }: { children: React.ReactElement }) {
-  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+// ── Shared layout shell ───────────────────────────────────────────────────────
 
-  useEffect(() => {
-    let mounted = true;
-    fetchCurrentUser().then((user) => {
-      if (!mounted) return;
-      if (!user) {
-        setAuth({ status: "unauthenticated" });
-      } else {
-        setAuth({ status: "authenticated", user });
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+const sidebarNavStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 14px",
+  borderRadius: 8,
+  textDecoration: "none",
+  color: isActive ? "#c41e3a" : "#374151",
+  background: isActive ? "#fdecea" : "transparent",
+  fontWeight: isActive ? 600 : 400,
+  fontSize: 14,
+});
 
-  if (auth.status === "loading") {
-    return <div>Loading...</div>;
-  }
-  if (auth.status === "unauthenticated") {
-    return <Navigate to="/login" replace />;
-  }
-  if (auth.user.role !== "ADMIN") {
-    return <div>Not authorised</div>;
-  }
-  return children;
+const topTabStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "1px solid rgba(255,255,255,0.45)",
+  color: "#fff",
+  borderRadius: 6,
+  padding: "6px 14px",
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: "pointer",
+};
+
+const logoutBtnStyle: React.CSSProperties = {
+  padding: "6px 14px",
+  color: "#c41e3a",
+  background: "#fff",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 500,
+  fontSize: 13,
+};
+
+function AppShell({
+  user,
+  onLogout,
+  sidebar,
+}: {
+  user: AuthUser;
+  onLogout: () => void;
+  sidebar: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
+      {/* Top bar */}
+      <header
+        style={{
+          background: "#c41e3a",
+          padding: "0 24px",
+          display: "flex",
+          alignItems: "center",
+          height: 64,
+          flexShrink: 0,
+        }}
+      >
+        <img
+          src="/rostar-logo.png"
+          alt="Rostar"
+          style={{ height: 48, width: "auto", mixBlendMode: "lighten" }}
+        />
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+          {(["Settings", "Help", "My Account"] as const).map((label) => (
+            <button key={label} type="button" style={topTabStyle}>
+              {label}
+            </button>
+          ))}
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginLeft: 10 }}>
+            {user.email}
+          </span>
+          <button type="button" onClick={onLogout} style={logoutBtnStyle}>
+            Logout
+          </button>
+        </div>
+      </header>
+
+      {/* Body */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Left sidebar */}
+        <nav
+          style={{
+            width: 220,
+            background: "#fff",
+            borderRight: "1px solid #e5e7eb",
+            padding: "20px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            flexShrink: 0,
+            overflowY: "auto",
+          }}
+        >
+          {sidebar}
+        </nav>
+
+        {/* Main content */}
+        <main style={{ flex: 1, overflow: "auto", padding: "24px", background: "#f9fafb" }}>
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
 }
 
-function ArtistRoute({ children }: { children: React.ReactElement }) {
+// ── Admin layout ──────────────────────────────────────────────────────────────
+
+function AdminLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  return (
+    <AppShell
+      user={user}
+      onLogout={onLogout}
+      sidebar={
+        <>
+          <NavLink to="/calendar" style={sidebarNavStyle}>
+            <CalendarIcon /> Calendar
+          </NavLink>
+          <NavLink to="/events/new" style={sidebarNavStyle}>
+            <BookingsIcon /> Bookings
+          </NavLink>
+          <NavLink to="/venues" style={sidebarNavStyle}>
+            <VenuesIcon /> Venues
+          </NavLink>
+          <NavLink to="/artists" style={sidebarNavStyle}>
+            <ArtistsIcon /> Artists
+          </NavLink>
+          <NavLink to="/invoices" style={sidebarNavStyle}>
+            <InvoicesIcon /> Invoices
+          </NavLink>
+          <UpcomingEvents />
+        </>
+      }
+    />
+  );
+}
+
+function AdminLayoutRoute() {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const location = useLocation();
 
   useEffect(() => {
     let mounted = true;
     fetchCurrentUser().then((user) => {
       if (!mounted) return;
-      if (!user) {
-        setAuth({ status: "unauthenticated" });
-      } else {
-        setAuth({ status: "authenticated", user });
-      }
+      if (!user) setAuth({ status: "unauthenticated" });
+      else setAuth({ status: "authenticated", user });
     });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    return () => { mounted = false; };
+  }, [location.pathname]);
 
-  if (auth.status === "loading") {
-    return <div>Loading...</div>;
+  async function handleLogout() {
+    await logout();
+    window.location.href = "/login";
   }
-  if (auth.status === "unauthenticated") {
-    return <Navigate to="/login" replace />;
+
+  if (auth.status === "loading") return <div style={{ padding: 24 }}>Loading...</div>;
+  if (auth.status === "unauthenticated") return <Navigate to="/login" replace />;
+  if (auth.user.role !== "ADMIN") return <div style={{ padding: 24 }}>Not authorised</div>;
+
+  return <AdminLayout user={auth.user} onLogout={handleLogout} />;
+}
+
+// ── Artist layout ─────────────────────────────────────────────────────────────
+
+function ArtistLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  return (
+    <AppShell
+      user={user}
+      onLogout={onLogout}
+      sidebar={
+        <>
+          <NavLink to="/artist/calendar" style={sidebarNavStyle}>
+            <CalendarIcon /> Calendar
+          </NavLink>
+          <NavLink to="/artist/unavailability" style={sidebarNavStyle}>
+            <UnavailabilityIcon /> Unavailability
+          </NavLink>
+          <UpcomingEvents />
+        </>
+      }
+    />
+  );
+}
+
+function ArtistLayoutRoute() {
+  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const location = useLocation();
+
+  useEffect(() => {
+    let mounted = true;
+    fetchCurrentUser().then((user) => {
+      if (!mounted) return;
+      if (!user) setAuth({ status: "unauthenticated" });
+      else setAuth({ status: "authenticated", user });
+    });
+    return () => { mounted = false; };
+  }, [location.pathname]);
+
+  async function handleLogout() {
+    await logout();
+    window.location.href = "/login";
   }
-  if (auth.user.role !== "ARTIST") {
-    return <div>Not authorised</div>;
-  }
+
+  if (auth.status === "loading") return <div style={{ padding: 24 }}>Loading...</div>;
+  if (auth.status === "unauthenticated") return <Navigate to="/login" replace />;
+  if (auth.user.role !== "ARTIST") return <div style={{ padding: 24 }}>Not authorised</div>;
   if (auth.user.artistId === null) {
     return (
       <div style={{ padding: 24, color: "#555" }}>
@@ -170,36 +414,51 @@ function ArtistRoute({ children }: { children: React.ReactElement }) {
       </div>
     );
   }
-  return children;
+
+  return <ArtistLayout user={auth.user} onLogout={handleLogout} />;
 }
 
-function VenueRoute({ children }: { children: React.ReactElement }) {
+// ── Venue layout ──────────────────────────────────────────────────────────────
+
+function VenueLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  return (
+    <AppShell
+      user={user}
+      onLogout={onLogout}
+      sidebar={
+        <>
+          <NavLink to="/venue/calendar" style={sidebarNavStyle}>
+            <CalendarIcon /> My Calendar
+          </NavLink>
+          <UpcomingEvents />
+        </>
+      }
+    />
+  );
+}
+
+function VenueLayoutRoute() {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+  const location = useLocation();
 
   useEffect(() => {
     let mounted = true;
     fetchCurrentUser().then((user) => {
       if (!mounted) return;
-      if (!user) {
-        setAuth({ status: "unauthenticated" });
-      } else {
-        setAuth({ status: "authenticated", user });
-      }
+      if (!user) setAuth({ status: "unauthenticated" });
+      else setAuth({ status: "authenticated", user });
     });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    return () => { mounted = false; };
+  }, [location.pathname]);
 
-  if (auth.status === "loading") {
-    return <div>Loading...</div>;
+  async function handleLogout() {
+    await logout();
+    window.location.href = "/login";
   }
-  if (auth.status === "unauthenticated") {
-    return <Navigate to="/login" replace />;
-  }
-  if (auth.user.role !== "VENUE") {
-    return <div>Not authorised</div>;
-  }
+
+  if (auth.status === "loading") return <div style={{ padding: 24 }}>Loading...</div>;
+  if (auth.status === "unauthenticated") return <Navigate to="/login" replace />;
+  if (auth.user.role !== "VENUE") return <div style={{ padding: 24 }}>Not authorised</div>;
   if (auth.user.venueId === null) {
     return (
       <div style={{ padding: 24, color: "#555" }}>
@@ -207,213 +466,36 @@ function VenueRoute({ children }: { children: React.ReactElement }) {
       </div>
     );
   }
-  return children;
+
+  return <VenueLayout user={auth.user} onLogout={handleLogout} />;
 }
 
-function Layout({ auth }: { auth: AuthState }) {
-  const user = auth.status === "authenticated" ? auth.user : null;
-
-  async function handleLogout() {
-    await logout();
-    window.location.href = "/login";
-  }
-
-  return (
-    <div
-      style={{
-        width: "100%",
-        backgroundColor: "#c41e3a",
-        padding: "8px 0",
-        marginBottom: 16,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "0 24px",
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          minHeight: 80,
-        }}
-      >
-        <img
-          src="/rostar-logo.png"
-          alt="Rostar"
-          style={{
-            height: 64,
-            width: "auto",
-            display: "block",
-            mixBlendMode: "lighten",
-          }}
-        />
-        {user?.role === "ADMIN" && (
-          <>
-            <NavLink to="/calendar" style={headerLinkStyle}>
-              <CalendarIcon />
-              Calendar
-            </NavLink>
-            <NavLink to="/events/new" style={headerLinkStyle}>
-              <BookingsIcon />
-              Bookings
-            </NavLink>
-            <NavLink to="/venues" style={headerLinkStyle}>
-              <VenuesIcon />
-              Venues
-            </NavLink>
-            <NavLink to="/artists" style={headerLinkStyle}>
-              <ArtistsIcon />
-              Artists
-            </NavLink>
-            <NavLink to="/invoices" style={headerLinkStyle}>
-              <InvoicesIcon />
-              Invoices
-            </NavLink>
-          </>
-        )}
-        {user?.role === "ARTIST" && (
-          <>
-            <NavLink to="/artist/gigs" style={headerLinkStyle}>
-              My Gigs
-            </NavLink>
-            <NavLink to="/artist/unavailability" style={headerLinkStyle}>
-              Unavailability
-            </NavLink>
-          </>
-        )}
-        {user?.role === "VENUE" && (
-          <NavLink to="/venue/calendar" style={headerLinkStyle}>
-            <CalendarIcon />
-            My Calendar
-          </NavLink>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          {user ? (
-            <>
-              <span style={{ fontSize: 12, color: "#fff" }}>{user.email} ({user.role})</span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                style={{
-                  padding: "4px 12px",
-                  color: "#c41e3a",
-                  background: "#fff",
-                  border: "none",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontWeight: 500,
-                }}
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <NavLink to="/login" style={headerLinkStyle}>
-              Login
-            </NavLink>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+// ── App ───────────────────────────────────────────────────────────────────────
 
 function AppContent() {
-  const location = useLocation();
-  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
-
-  useEffect(() => {
-    fetchCurrentUser().then((user) => {
-      if (!user) {
-        setAuth({ status: "unauthenticated" });
-      } else {
-        setAuth({ status: "authenticated", user });
-      }
-    });
-  }, [location.pathname]);
-
   return (
-    <>
-      <Layout auth={auth} />
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          padding: "16px 24px",
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
-        <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to="/calendar" replace />} />
-        <Route
-          path="/venues"
-          element={
-            <AdminRoute>
-              <Venues />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/artists"
-          element={
-            <AdminRoute>
-              <Artists />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/calendar"
-          element={
-            <AdminRoute>
-              <Calendar />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/events/new"
-          element={
-            <AdminRoute>
-              <NewEvent />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/invoices"
-          element={
-            <AdminRoute>
-              <Invoices />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="/artist/gigs"
-          element={
-            <ArtistRoute>
-              <ArtistGigs />
-            </ArtistRoute>
-          }
-        />
-        <Route
-          path="/artist/unavailability"
-          element={
-            <ArtistRoute>
-              <ArtistUnavailability />
-            </ArtistRoute>
-          }
-        />
-        <Route
-          path="/venue/calendar"
-          element={
-            <VenueRoute>
-              <VenueCalendar />
-            </VenueRoute>
-          }
-        />
-      </Routes>
-      </div>
-    </>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/" element={<Navigate to="/calendar" replace />} />
+
+      <Route element={<AdminLayoutRoute />}>
+        <Route path="/calendar" element={<Calendar />} />
+        <Route path="/events/new" element={<NewEvent />} />
+        <Route path="/venues" element={<Venues />} />
+        <Route path="/artists" element={<Artists />} />
+        <Route path="/invoices" element={<Invoices />} />
+      </Route>
+
+      <Route element={<ArtistLayoutRoute />}>
+        <Route path="/artist/calendar" element={<ArtistGigs />} />
+        <Route path="/artist/unavailability" element={<ArtistUnavailability />} />
+      </Route>
+      <Route path="/artist/gigs" element={<Navigate to="/artist/calendar" replace />} />
+
+      <Route element={<VenueLayoutRoute />}>
+        <Route path="/venue/calendar" element={<VenueCalendar />} />
+      </Route>
+    </Routes>
   );
 }
 

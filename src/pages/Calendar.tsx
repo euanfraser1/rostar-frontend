@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPatch } from "../api/http";
+import { Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
 
@@ -142,6 +143,8 @@ export default function Calendar() {
     });
   }
 
+  const [legendOpen, setLegendOpen] = useState(false);
+
   const monthStart = startOfMonth(viewDate);
   const monthDays = daysInMonth(viewDate);
   const leadingBlanks = mondayIndex(monthStart.getDay());
@@ -209,19 +212,6 @@ export default function Calendar() {
     <div>
       <h1 style={{ marginTop: 0 }}>Calendar</h1>
 
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-        {(Object.keys(STATUS_CONFIG) as EventStatus[]).map((s) => {
-          const cfg = STATUS_CONFIG[s];
-          return (
-            <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: cfg.dot }} />
-              {cfg.label}
-            </div>
-          );
-        })}
-      </div>
-
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
       {/* Nav */}
@@ -231,6 +221,43 @@ export default function Calendar() {
         <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>→</button>
         <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
         {loading && <span style={{ marginLeft: 8, fontSize: 13, opacity: 0.6 }}>Loading…</span>}
+
+        {/* Colour key */}
+        <div style={{ marginLeft: "auto", position: "relative" }}>
+          <button
+            onClick={() => setLegendOpen((o) => !o)}
+            title="Colour key"
+            style={{
+              background: "none", border: "none", outline: "none", cursor: "pointer",
+              padding: 4, borderRadius: 6,
+              display: "flex", alignItems: "center",
+              color: legendOpen ? "#c41e3a" : "#9ca3af",
+            }}
+          >
+            <Info size={20} />
+          </button>
+          {legendOpen && (
+            <div style={{
+              position: "absolute", right: 0, top: 40, zIndex: 100,
+              background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+              padding: "12px 16px", boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+              minWidth: 160,
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 11, color: "#6b7280", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Colour key
+              </div>
+              {(Object.keys(STATUS_CONFIG) as EventStatus[]).map((s) => {
+                const cfg = STATUS_CONFIG[s];
+                return (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 6 }}>
+                    <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />
+                    {cfg.label}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Month grid */}

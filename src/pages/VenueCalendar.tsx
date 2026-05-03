@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api/http";
+import { Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
 
@@ -46,6 +47,7 @@ export default function VenueCalendar() {
 
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -98,16 +100,6 @@ export default function VenueCalendar() {
     <div>
       <h1 style={{ marginTop: 0 }}>My Calendar</h1>
 
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-        {(["UNBOOKED", "OFFERED", "CONFIRMED"] as EventStatus[]).map((s) => (
-          <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: STATUS_CONFIG[s].dot }} />
-            {STATUS_CONFIG[s].label}
-          </div>
-        ))}
-      </div>
-
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
       {/* Month nav */}
@@ -117,6 +109,40 @@ export default function VenueCalendar() {
         <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>→</button>
         <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
         {loading && <span style={{ marginLeft: 8, fontSize: 13, opacity: 0.6 }}>Loading…</span>}
+
+        {/* Colour key */}
+        <div style={{ marginLeft: "auto", position: "relative" }}>
+          <button
+            onClick={() => setLegendOpen((o) => !o)}
+            title="Colour key"
+            style={{
+              background: "none", border: "none", outline: "none", cursor: "pointer",
+              padding: 4, borderRadius: 6,
+              display: "flex", alignItems: "center",
+              color: legendOpen ? "#c41e3a" : "#9ca3af",
+            }}
+          >
+            <Info size={20} />
+          </button>
+          {legendOpen && (
+            <div style={{
+              position: "absolute", right: 0, top: 36, zIndex: 100,
+              background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+              padding: "12px 16px", boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+              minWidth: 160,
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 11, color: "#6b7280", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Colour key
+              </div>
+              {(["UNBOOKED", "OFFERED", "CONFIRMED"] as EventStatus[]).map((s) => (
+                <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 6 }}>
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: STATUS_CONFIG[s].dot, flexShrink: 0 }} />
+                  {STATUS_CONFIG[s].label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Month grid */}
