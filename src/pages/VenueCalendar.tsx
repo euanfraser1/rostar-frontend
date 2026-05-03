@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api/http";
-import { useNavigate } from "react-router-dom";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
 
@@ -9,22 +8,16 @@ type GigEvent = {
   startDateTime: string;
   endDateTime: string;
   status: EventStatus;
-  artistFee: string | null;
+  venueFee: string | null;
   notes: string | null;
   venue: { id: string; name: string; postcode: string };
-};
-
-type Unavailability = {
-  id: string;
-  startDateTime: string;
-  endDateTime: string;
-  notes: string | null;
+  artist: { id: string; name: string } | null;
 };
 
 const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
-  UNBOOKED:  { label: "Unbooked",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
-  OFFERED:   { label: "Offered",   bg: "#fff4cc", color: "#7a5700", dot: "#fdbc00" },
-  CONFIRMED: { label: "Confirmed", bg: "#fde8e8", color: "#a10000", dot: "#a10000" },
+  UNBOOKED:  { label: "Available",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
+  OFFERED:   { label: "Pending",    bg: "#fff4cc", color: "#7a5700", dot: "#fdbc00" },
+  CONFIRMED: { label: "Confirmed",  bg: "#fde8e8", color: "#a10000", dot: "#a10000" },
 };
 
 function pad2(n: number) { return String(n).padStart(2, "0"); }
@@ -40,10 +33,14 @@ function formatFee(fee: string | null) {
   return `£${Number(fee).toFixed(2)}`;
 }
 
-export default function ArtistGigs() {
-  const navigate = useNavigate();
+// Label shown on the calendar cell chip
+function cellLabel(ev: GigEvent): string {
+  if (ev.status === "CONFIRMED" && ev.artist) return ev.artist.name;
+  return formatTime(ev.startDateTime) + (ev.venueFee ? ` · ${formatFee(ev.venueFee)}` : "");
+}
+
+export default function VenueCalendar() {
   const [events, setEvents] = useState<GigEvent[]>([]);
-  const [unavailabilities, setUnavailabilities] = useState<Unavailability[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,13 +54,19 @@ export default function ArtistGigs() {
     const to = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
     const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
 
-    Promise.all([
-      apiGet<GigEvent[]>(`/events?${params}`),
-      apiGet<Unavailability[]>(`/artists/me/unavailability?${params}`),
-    ])
-      .then(([evData, unavData]) => {
-        setEvents([...evData].sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()));
-        setUnavailabilities(unavData);
+    apiGet<GigEvent[]>(`/events?${params}`)
+      .then((data) => {
+        // Unbooked first, then offered, then confirmed — mirrors master calendar ordering
+        const order: Record<EventStatus, number> = { UNBOOKED: 0, OFFERED: 1, CONFIRMED: 2 };
+        setEvents(
+          [...data].sort((a, b) => {
+            const dayA = localDateKey(new Date(a.startDateTime));
+            const dayB = localDateKey(new Date(b.startDateTime));
+            if (dayA !== dayB) return dayA < dayB ? -1 : 1;
+            if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+            return new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime();
+          })
+        );
         setLoading(false);
       })
       .catch((e) => { setError(String(e)); setLoading(false); });
@@ -80,35 +83,12 @@ export default function ArtistGigs() {
     return map;
   }, [events]);
 
-  // Map day key -> unavailability blocks that overlap that day at all
-  const unavailByDay = useMemo(() => {
-    const map = new Map<string, Unavailability[]>();
-    for (const u of unavailabilities) {
-      const start = new Date(u.startDateTime);
-      const end = new Date(u.endDateTime);
-      // Walk every calendar day the block touches
-      const cursor = new Date(start);
-      cursor.setHours(0, 0, 0, 0);
-      const endDay = new Date(end);
-      endDay.setHours(0, 0, 0, 0);
-      while (cursor <= endDay) {
-        const key = localDateKey(cursor);
-        const arr = map.get(key) ?? [];
-        arr.push(u);
-        map.set(key, arr);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-    }
-    return map;
-  }, [unavailabilities]);
-
   const monthStart = startOfMonth(viewDate);
   const monthDays = daysInMonth(viewDate);
   const leadingBlanks = mondayIndex(monthStart.getDay());
   const monthLabel = viewDate.toLocaleString(undefined, { month: "long", year: "numeric" });
   const todayKey = localDateKey(new Date());
   const selectedEvents = selectedDayKey ? eventsByDay.get(selectedDayKey) ?? [] : [];
-  const selectedUnavail = selectedDayKey ? unavailByDay.get(selectedDayKey) ?? [] : [];
 
   function prevMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)); setSelectedDayKey(null); }
   function nextMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)); setSelectedDayKey(null); }
@@ -116,33 +96,16 @@ export default function ArtistGigs() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>My Gigs</h1>
-        <button
-          onClick={() => navigate("/artist/unavailability")}
-          style={{
-            padding: "6px 16px", borderRadius: 8, fontWeight: 600, fontSize: 13,
-            background: "#a10000", color: "#fff", border: "none", cursor: "pointer",
-          }}
-        >
-          Manage unavailability
-        </button>
-      </div>
+      <h1 style={{ marginTop: 0 }}>My Calendar</h1>
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: "#fdbc00" }} />
-          Offered
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: "#a10000" }} />
-          Confirmed
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: "#b0b0b0" }} />
-          Unavailable
-        </div>
+        {(["UNBOOKED", "OFFERED", "CONFIRMED"] as EventStatus[]).map((s) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: STATUS_CONFIG[s].dot }} />
+            {STATUS_CONFIG[s].label}
+          </div>
+        ))}
       </div>
 
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
@@ -171,10 +134,8 @@ export default function ArtistGigs() {
           const cellDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
           const key = localDateKey(cellDate);
           const dayEvents = eventsByDay.get(key) ?? [];
-          const dayUnavail = unavailByDay.get(key) ?? [];
           const isSelected = selectedDayKey === key;
           const isToday = key === todayKey;
-          const hasUnavail = dayUnavail.length > 0;
 
           return (
             <button
@@ -183,32 +144,24 @@ export default function ArtistGigs() {
               style={{
                 textAlign: "left", minHeight: 96, padding: 8, borderRadius: 10,
                 border: isSelected ? "2px solid #a10000" : "1px solid #eee",
-                background: hasUnavail ? "#f5f5f5" : "#fff",
-                cursor: "pointer",
+                background: "#fff", cursor: "pointer",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
                 <strong style={{
-                  fontSize: 13, background: isToday ? "#a10000" : "transparent",
-                  color: isToday ? "#fff" : "inherit", borderRadius: "50%",
-                  width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 13,
+                  background: isToday ? "#a10000" : "transparent",
+                  color: isToday ? "#fff" : "inherit",
+                  borderRadius: "50%",
+                  width: 22, height: 22,
+                  display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   {day}
                 </strong>
                 {dayEvents.length > 0 && <span style={{ fontSize: 11, opacity: 0.6 }}>{dayEvents.length}</span>}
               </div>
               <div style={{ display: "grid", gap: 3 }}>
-                {hasUnavail && (
-                  <div style={{
-                    fontSize: 11, padding: "3px 6px", borderRadius: 6,
-                    background: "#e8e8e8", color: "#666",
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    borderLeft: "3px solid #b0b0b0",
-                  }}>
-                    Unavailable
-                  </div>
-                )}
-                {dayEvents.slice(0, hasUnavail ? 1 : 2).map((ev) => {
+                {dayEvents.slice(0, 2).map((ev) => {
                   const cfg = STATUS_CONFIG[ev.status];
                   return (
                     <div
@@ -219,14 +172,14 @@ export default function ArtistGigs() {
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         borderLeft: `3px solid ${cfg.dot}`,
                       }}
-                      title={`${formatTime(ev.startDateTime)} — ${ev.venue.name} [${ev.status}]`}
+                      title={`${formatTime(ev.startDateTime)} [${ev.status}]`}
                     >
-                      {formatTime(ev.startDateTime)} {ev.venue.name}
+                      {cellLabel(ev)}
                     </div>
                   );
                 })}
-                {dayEvents.length > (hasUnavail ? 1 : 2) && (
-                  <div style={{ fontSize: 11, opacity: 0.6 }}>+{dayEvents.length - (hasUnavail ? 1 : 2)} more</div>
+                {dayEvents.length > 2 && (
+                  <div style={{ fontSize: 11, opacity: 0.6 }}>+{dayEvents.length - 2} more</div>
                 )}
               </div>
             </button>
@@ -238,35 +191,14 @@ export default function ArtistGigs() {
       <div style={{ marginTop: 20 }}>
         <h2 style={{ margin: "0 0 10px 0", fontSize: 18 }}>
           {selectedDayKey
-            ? `${new Date(selectedDayKey + "T00:00:00").toLocaleDateString(undefined, {
+            ? new Date(selectedDayKey + "T00:00:00").toLocaleDateString(undefined, {
                 weekday: "long", day: "numeric", month: "long", year: "numeric",
-              })}`
+              })
             : "Select a day"}
         </h2>
 
-        {!selectedDayKey && <p style={{ opacity: 0.6 }}>Click a day to see full details.</p>}
-        {selectedDayKey && selectedEvents.length === 0 && selectedUnavail.length === 0 && (
-          <p style={{ opacity: 0.6 }}>No gigs on this day.</p>
-        )}
-
-        {selectedUnavail.length > 0 && (
-          <div style={{ display: "grid", gap: 8, marginBottom: 12, maxWidth: 540 }}>
-            {selectedUnavail.map((u) => (
-              <div
-                key={u.id}
-                style={{
-                  padding: "10px 14px", borderRadius: 10,
-                  background: "#e8e8e8", borderLeft: "4px solid #b0b0b0",
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 13, color: "#555" }}>
-                  Unavailable: {formatTime(u.startDateTime)} – {formatTime(u.endDateTime)}
-                </div>
-                {u.notes && <div style={{ fontSize: 13, opacity: 0.7, marginTop: 3 }}>{u.notes}</div>}
-              </div>
-            ))}
-          </div>
-        )}
+        {!selectedDayKey && <p style={{ opacity: 0.6 }}>Click a day to see details.</p>}
+        {selectedDayKey && selectedEvents.length === 0 && <p style={{ opacity: 0.6 }}>No events on this day.</p>}
 
         {selectedEvents.length > 0 && (
           <div style={{ display: "grid", gap: 12 }}>
@@ -293,17 +225,16 @@ export default function ArtistGigs() {
                     </span>
                   </div>
                   <div style={{ fontSize: 14, display: "grid", gap: 4 }}>
-                    <div>
-                      <span style={{ opacity: 0.6 }}>Venue: </span>
-                      <strong>{ev.venue.name}</strong>
-                      {ev.venue.postcode && (
-                        <span style={{ opacity: 0.6 }}> · {ev.venue.postcode}</span>
-                      )}
-                    </div>
-                    {ev.artistFee && (
+                    {ev.status === "CONFIRMED" && ev.artist && (
                       <div>
-                        <span style={{ opacity: 0.6 }}>Fee: </span>
-                        <strong>{formatFee(ev.artistFee)}</strong>
+                        <span style={{ opacity: 0.6 }}>Artist: </span>
+                        <strong>{ev.artist.name}</strong>
+                      </div>
+                    )}
+                    {ev.venueFee && (
+                      <div>
+                        <span style={{ opacity: 0.6 }}>Venue fee: </span>
+                        <strong>{formatFee(ev.venueFee)}</strong>
                       </div>
                     )}
                     {ev.notes && (

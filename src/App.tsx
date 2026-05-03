@@ -6,6 +6,8 @@ import Calendar from "./pages/Calendar";
 import NewEvent from "./pages/NewEvent";
 import Login from "./pages/Login";
 import ArtistGigs from "./pages/ArtistGigs";
+import ArtistUnavailability from "./pages/ArtistUnavailability";
+import VenueCalendar from "./pages/VenueCalendar";
 import Invoices from "./pages/Invoices";
 import { fetchCurrentUser, type AuthUser, logout } from "./api/auth";
 
@@ -104,7 +106,7 @@ type AuthState =
   | { status: "unauthenticated" }
   | { status: "authenticated"; user: AuthUser };
 
-function AdminRoute({ children }: { children: JSX.Element }) {
+function AdminRoute({ children }: { children: React.ReactElement }) {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
 
   useEffect(() => {
@@ -134,7 +136,7 @@ function AdminRoute({ children }: { children: JSX.Element }) {
   return children;
 }
 
-function ArtistRoute({ children }: { children: JSX.Element }) {
+function ArtistRoute({ children }: { children: React.ReactElement }) {
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
 
   useEffect(() => {
@@ -165,6 +167,43 @@ function ArtistRoute({ children }: { children: JSX.Element }) {
     return (
       <div style={{ padding: 24, color: "#555" }}>
         Your account is not linked to an artist profile. Please contact Rostar.
+      </div>
+    );
+  }
+  return children;
+}
+
+function VenueRoute({ children }: { children: React.ReactElement }) {
+  const [auth, setAuth] = useState<AuthState>({ status: "loading" });
+
+  useEffect(() => {
+    let mounted = true;
+    fetchCurrentUser().then((user) => {
+      if (!mounted) return;
+      if (!user) {
+        setAuth({ status: "unauthenticated" });
+      } else {
+        setAuth({ status: "authenticated", user });
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (auth.status === "loading") {
+    return <div>Loading...</div>;
+  }
+  if (auth.status === "unauthenticated") {
+    return <Navigate to="/login" replace />;
+  }
+  if (auth.user.role !== "VENUE") {
+    return <div>Not authorised</div>;
+  }
+  if (auth.user.venueId === null) {
+    return (
+      <div style={{ padding: 24, color: "#555" }}>
+        Your account is not linked to a venue. Please contact Rostar.
       </div>
     );
   }
@@ -234,8 +273,19 @@ function Layout({ auth }: { auth: AuthState }) {
           </>
         )}
         {user?.role === "ARTIST" && (
-          <NavLink to="/artist/gigs" style={headerLinkStyle}>
-            My Gigs
+          <>
+            <NavLink to="/artist/gigs" style={headerLinkStyle}>
+              My Gigs
+            </NavLink>
+            <NavLink to="/artist/unavailability" style={headerLinkStyle}>
+              Unavailability
+            </NavLink>
+          </>
+        )}
+        {user?.role === "VENUE" && (
+          <NavLink to="/venue/calendar" style={headerLinkStyle}>
+            <CalendarIcon />
+            My Calendar
           </NavLink>
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
@@ -343,6 +393,22 @@ function AppContent() {
             <ArtistRoute>
               <ArtistGigs />
             </ArtistRoute>
+          }
+        />
+        <Route
+          path="/artist/unavailability"
+          element={
+            <ArtistRoute>
+              <ArtistUnavailability />
+            </ArtistRoute>
+          }
+        />
+        <Route
+          path="/venue/calendar"
+          element={
+            <VenueRoute>
+              <VenueCalendar />
+            </VenueRoute>
           }
         />
       </Routes>

@@ -19,6 +19,15 @@ type GigEvent = {
 
 type Artist = { id: string; name: string };
 
+type ArtistUnavailability = {
+  id: string;
+  artistId: string;
+  startDateTime: string;
+  endDateTime: string;
+  notes: string | null;
+  artist: { id: string; name: string };
+};
+
 const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
   UNBOOKED:  { label: "Unbooked",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
   OFFERED:   { label: "Offered",   bg: "#fff4cc", color: "#7a5700", dot: "#fdbc00" },
@@ -49,6 +58,7 @@ export default function Calendar() {
 
   const [events, setEvents] = useState<GigEvent[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [unavailabilities, setUnavailabilities] = useState<ArtistUnavailability[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +79,7 @@ export default function Calendar() {
       .catch(() => {}); // non-critical; dropdown just stays empty
   }, []);
 
-  // Load events for the viewed month
+  // Load events + unavailability for the viewed month
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -77,11 +87,15 @@ export default function Calendar() {
     const to = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
     const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
 
-    apiGet<GigEvent[]>(`/events?${params}`)
-      .then((data) => {
-        setEvents([...data].sort(
+    Promise.all([
+      apiGet<GigEvent[]>(`/events?${params}`),
+      apiGet<ArtistUnavailability[]>(`/artist-unavailability?${params}`),
+    ])
+      .then(([evData, unavData]) => {
+        setEvents([...evData].sort(
           (a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
         ));
+        setUnavailabilities(unavData);
         setLoading(false);
       })
       .catch((e) => { setError(String(e)); setLoading(false); });
@@ -104,6 +118,29 @@ export default function Calendar() {
     }
     return map;
   }, [events]);
+
+  // For each artist, collect their unavailability blocks for the month
+  const unavailByArtist = useMemo(() => {
+    const map = new Map<string, ArtistUnavailability[]>();
+    for (const u of unavailabilities) {
+      const arr = map.get(u.artistId) ?? [];
+      arr.push(u);
+      map.set(u.artistId, arr);
+    }
+    return map;
+  }, [unavailabilities]);
+
+  // Check if a given artist overlaps a given event's time window
+  function artistConflictsForEvent(artistId: string, ev: GigEvent): ArtistUnavailability[] {
+    const blocks = unavailByArtist.get(artistId) ?? [];
+    const evStart = new Date(ev.startDateTime).getTime();
+    const evEnd = new Date(ev.endDateTime).getTime();
+    return blocks.filter((u) => {
+      const uStart = new Date(u.startDateTime).getTime();
+      const uEnd = new Date(u.endDateTime).getTime();
+      return uStart < evEnd && uEnd > evStart;
+    });
+  }
 
   const monthStart = startOfMonth(viewDate);
   const monthDays = daysInMonth(viewDate);
@@ -402,11 +439,40 @@ export default function Calendar() {
                           style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc", fontSize: 13 }}
                         >
                           <option value="">Select an artist…</option>
-                          {artists.map((a) => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
-                          ))}
+                          {artists.map((a) => {
+                            const conflicts = artistConflictsForEvent(a.id, ev);
+                            return (
+                              <option key={a.id} value={a.id}>
+                                {a.name}{conflicts.length > 0 ? " (unavailable)" : ""}
+                              </option>
+                            );
+                          })}
                         </select>
                       </label>
+
+                      {/* Unavailability warning */}
+                      {assignArtistId && (() => {
+                        const conflicts = artistConflictsForEvent(assignArtistId, ev);
+                        if (conflicts.length === 0) return null;
+                        return (
+                          <div style={{
+                            padding: "10px 12px", borderRadius: 8,
+                            background: "#fff8e1", border: "1px solid #f5c400",
+                            fontSize: 13, color: "#7a5700",
+                          }}>
+                            <strong>⚠ Artist has marked themselves unavailable for this time:</strong>
+                            <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                              {conflicts.map((c) => (
+                                <li key={c.id}>
+                                  {new Date(c.startDateTime).toLocaleString()} – {new Date(c.endDateTime).toLocaleString()}
+                                  {c.notes ? ` — ${c.notes}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                            <div style={{ marginTop: 6, opacity: 0.8 }}>You can still proceed with the booking.</div>
+                          </div>
+                        );
+                      })()}
 
                       <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
                         Set status to

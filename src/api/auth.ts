@@ -3,8 +3,9 @@ import { apiGet, apiPost } from "./http";
 export type AuthUser = {
   id: string;
   email: string;
-  role: "ADMIN" | "ARTIST";
+  role: "ADMIN" | "ARTIST" | "VENUE";
   artistId: string | null;
+  venueId: string | null;
 };
 
 export async function login(email: string, password: string) {

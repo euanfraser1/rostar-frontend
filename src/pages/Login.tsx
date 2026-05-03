@@ -27,6 +27,8 @@ export default function Login() {
       navigate("/");
     } else if (user.role === "ARTIST") {
       navigate("/artist/gigs");
+    } else if (user.role === "VENUE") {
+      navigate("/venue/calendar");
     } else {
       navigate("/");
     }
@@ -66,7 +68,8 @@ export default function Login() {
       <p style={{ marginTop: 16, fontSize: 12, color: "#555" }}>
         Dev accounts: <br />
         Admin – admin@example.com / adminpassword <br />
-        Artist – artist@example.com / artistpassword
+        Artist – artist@example.com / artistpassword <br />
+        Venue – ship@venue.com / theship
       </p>
     </div>
   );

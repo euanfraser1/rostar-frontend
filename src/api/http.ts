@@ -37,6 +37,30 @@ export async function apiPatch<TResponse, TBody extends Record<string, unknown>>
   return { ok: false, status: res.status, message };
 }
 
+export async function apiDelete(
+  path: string
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (res.ok) {
+    return { ok: true };
+  }
+
+  let message = `HTTP ${res.status}`;
+  try {
+    const maybeJson = (await res.json()) as any;
+    if (maybeJson?.error) message = String(maybeJson.error);
+    else if (maybeJson?.message) message = String(maybeJson.message);
+  } catch {
+    // ignore
+  }
+
+  return { ok: false, status: res.status, message };
+}
+
 export async function apiPost<TResponse, TBody extends Record<string, unknown>>(
   path: string,
   body: TBody
