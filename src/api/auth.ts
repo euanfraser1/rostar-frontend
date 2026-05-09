@@ -27,4 +27,3 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
     return null;
   }
 }
-
