@@ -84,7 +84,6 @@ export default function Artists() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Artists</h1>
 
       <form
         onSubmit={handleAddArtist}

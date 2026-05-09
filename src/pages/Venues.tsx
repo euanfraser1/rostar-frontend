@@ -95,7 +95,6 @@ export default function Venues() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Venues</h1>
 
       <form
         onSubmit={handleAddVenue}

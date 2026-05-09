@@ -142,7 +142,6 @@ export default function NewEvent() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>New Gig Slot</h1>
       <p style={{ color: "#555", fontSize: 14, marginTop: -8, marginBottom: 20 }}>
         Create an unbooked event slot for a venue. You can assign an artist later.
       </p>

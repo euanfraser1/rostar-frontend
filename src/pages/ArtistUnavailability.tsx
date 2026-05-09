@@ -114,7 +114,6 @@ export default function ArtistUnavailability() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>My Unavailability</h1>
 
       {/* Add form */}
       <div style={{

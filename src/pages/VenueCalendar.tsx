@@ -98,7 +98,6 @@ export default function VenueCalendar() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>My Calendar</h1>
 
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 

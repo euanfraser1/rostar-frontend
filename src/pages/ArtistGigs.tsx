@@ -119,7 +119,6 @@ export default function ArtistGigs() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>My Gigs</h1>
         <button
           onClick={() => navigate("/artist/unavailability")}
           style={{
