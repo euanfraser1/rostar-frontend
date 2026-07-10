@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiGet, apiPost } from "../api/http";
 
 type ArtistUser = { id: string; email: string };
@@ -129,7 +130,7 @@ export default function Artists() {
                 background: "#fff",
                 border: "1px solid #e0e0e0",
                 borderRadius: 8,
-                maxWidth: 540,
+                maxWidth: 640,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -143,24 +144,43 @@ export default function Artists() {
                     <span style={{ marginLeft: 12, fontSize: 13, color: "#aaa" }}>No login</span>
                   )}
                 </div>
-                {!a.user && (
-                  <button
-                    onClick={() => setOpenLoginPanel(isOpen ? null : a.id)}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                  <Link
+                    to={`/artists/${a.id}/profile`}
                     style={{
                       padding: "5px 12px",
-                      background: isOpen ? "#555" : "#c41e3a",
-                      color: "#fff",
-                      border: "none",
+                      background: "#fff",
+                      color: "#c41e3a",
+                      border: "1px solid #c41e3a",
                       borderRadius: 6,
                       cursor: "pointer",
                       fontSize: 13,
                       fontWeight: 500,
                       whiteSpace: "nowrap",
+                      textDecoration: "none",
                     }}
                   >
-                    {isOpen ? "Cancel" : "Set up login"}
-                  </button>
-                )}
+                    View / Edit profile
+                  </Link>
+                  {!a.user && (
+                    <button
+                      onClick={() => setOpenLoginPanel(isOpen ? null : a.id)}
+                      style={{
+                        padding: "5px 12px",
+                        background: isOpen ? "#555" : "#c41e3a",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isOpen ? "Cancel" : "Set up login"}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {isOpen && !a.user && (

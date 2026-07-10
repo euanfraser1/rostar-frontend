@@ -301,9 +301,9 @@ export default function NewEvent() {
   // Derived summary values
   const selectedVenue = venues.find((v) => v.id === venueId);
   const selectedArtist = artists.find((a) => a.id === artistId);
-  const totalFee =
-    parseFee(venueFee) + parseFee(artistFee) + parseFee(rostarCut);
-  const hasFees = venueFee || artistFee || rostarCut;
+  // Venue pays artist fee + Rostar cut (venue fee is the invoiced total — same sum).
+  const totalFee = parseFee(artistFee) + parseFee(rostarCut);
+  const hasFees = artistFee || rostarCut;
 
   const paymentBadgeColor: Record<string, string> = {
     Unpaid: "#f59e0b",
@@ -496,6 +496,9 @@ export default function NewEvent() {
               >
                 <label style={labelBase}>
                   Venue fee (£)
+                  <span style={{ fontSize: 11, fontWeight: 400, color: "#9ca3af" }}>
+                    Invoiced to venue
+                  </span>
                   <input
                     type="number"
                     min="0"
@@ -536,17 +539,22 @@ export default function NewEvent() {
                 {hasFees && (
                   <div style={{ paddingBottom: 2 }}>
                     <div style={{ fontSize: 11, color: "#c41e3a", fontWeight: 600, marginBottom: 2 }}>
-                      Calculated total
+                      Venue pays
                     </div>
                     <div style={{ fontSize: 22, fontWeight: 700, color: "#111827", lineHeight: 1.1 }}>
                       {fmtGBP(totalFee)}
                     </div>
                     <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                      (Venue fee + Artist fee)
+                      (Artist fee + Rostar cut)
                     </div>
                   </div>
                 )}
               </div>
+              {venueFee && hasFees && parseFee(venueFee) !== totalFee && (
+                <p style={{ margin: "10px 0 0", fontSize: 12, color: "#b45309" }}>
+                  Venue fee ({fmtGBP(parseFee(venueFee))}) differs from artist fee + Rostar cut ({fmtGBP(totalFee)}).
+                </p>
+              )}
             </div>
           </Card>
 
@@ -828,7 +836,7 @@ export default function NewEvent() {
                     }}
                   >
                     <SummaryRow
-                      label={<strong>Total</strong>}
+                      label={<strong>Venue pays</strong>}
                       value={<strong>{fmtGBP(totalFee)}</strong>}
                     />
                   </div>

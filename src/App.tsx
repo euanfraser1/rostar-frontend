@@ -7,6 +7,7 @@ import NewEvent from "./pages/NewEvent";
 import Login from "./pages/Login";
 import ArtistGigs from "./pages/ArtistGigs";
 import ArtistUnavailability from "./pages/ArtistUnavailability";
+import ArtistProfile from "./pages/ArtistProfile";
 import VenueCalendar from "./pages/VenueCalendar";
 import Invoices from "./pages/Invoices";
 import { fetchCurrentUser, type AuthUser, logout } from "./api/auth";
@@ -96,6 +97,15 @@ function UnavailabilityIcon() {
       <line x1="8" y1="2" x2="8" y2="6" />
       <line x1="3" y1="10" x2="21" y2="10" />
       <line x1="9" y1="15" x2="15" y2="15" />
+    </NavIcon>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <NavIcon>
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
     </NavIcon>
   );
 }
@@ -378,6 +388,9 @@ function ArtistLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void
           <NavLink to="/artist/unavailability" style={sidebarNavStyle}>
             <UnavailabilityIcon /> Unavailability
           </NavLink>
+          <NavLink to="/artist/profile" style={sidebarNavStyle}>
+            <ProfileIcon /> Profile
+          </NavLink>
           <UpcomingEvents />
         </>
       }
@@ -483,12 +496,14 @@ function AppContent() {
         <Route path="/events/new" element={<NewEvent />} />
         <Route path="/venues" element={<Venues />} />
         <Route path="/artists" element={<Artists />} />
+        <Route path="/artists/:artistId/profile" element={<ArtistProfile self={false} />} />
         <Route path="/invoices" element={<Invoices />} />
       </Route>
 
       <Route element={<ArtistLayoutRoute />}>
         <Route path="/artist/calendar" element={<ArtistGigs />} />
         <Route path="/artist/unavailability" element={<ArtistUnavailability />} />
+        <Route path="/artist/profile" element={<ArtistProfile self={true} />} />
       </Route>
       <Route path="/artist/gigs" element={<Navigate to="/artist/calendar" replace />} />
 
