@@ -6,6 +6,8 @@ export type AuthUser = {
   role: "ADMIN" | "ARTIST" | "VENUE";
   artistId: string | null;
   venueId: string | null;
+  /** Artist or venue display name when linked; otherwise null. */
+  name?: string | null;
 };
 
 export async function login(email: string, password: string) {

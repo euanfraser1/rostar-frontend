@@ -13,6 +13,9 @@ import VenueCalendar from "./pages/VenueCalendar";
 import Invoices from "./pages/Invoices";
 import { fetchCurrentUser, type AuthUser, logout } from "./api/auth";
 import { apiGet } from "./api/http";
+import UpcomingEvents from "./components/UpcomingEvents";
+import UserMenu from "./components/UserMenu";
+import { colors } from "./components/ui";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -90,7 +93,7 @@ function ArtistsIcon() {
   );
 }
 
-function UnavailabilityIcon() {
+function AvailabilityIcon() {
   return (
     <NavIcon>
       <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -117,6 +120,16 @@ function InboxIcon() {
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
       <polyline points="22,6 12,13 2,6" />
     </NavIcon>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
   );
 }
 
@@ -164,7 +177,7 @@ function ArtistInboxNavLink() {
               minWidth: 16,
               height: 16,
               borderRadius: 999,
-              background: "#c41e3a",
+              background: colors.brand,
               color: "#fff",
               fontSize: 10,
               fontWeight: 700,
@@ -185,100 +198,6 @@ function ArtistInboxNavLink() {
   );
 }
 
-// ── Upcoming events sidebar widget ────────────────────────────────────────────
-
-type SidebarEvent = {
-  id: string;
-  startDateTime: string;
-  status: "UNBOOKED" | "OFFERED" | "CONFIRMED";
-  venue: { id: string; name: string | null; postcode?: string };
-  artist: { id: string; name: string } | null;
-};
-
-const SIDEBAR_EVENT_DOT: Record<SidebarEvent["status"], string> = {
-  UNBOOKED: "#5a82c4",
-  OFFERED:  "#fdbc00",
-  CONFIRMED: "#a10000",
-};
-
-function UpcomingEvents() {
-  const [events, setEvents] = useState<SidebarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const now = new Date().toISOString();
-    const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-    const params = new URLSearchParams({ from: now, to: future });
-    apiGet<SidebarEvent[]>(`/events?${params}`)
-      .then((data) => {
-        const sorted = [...data].sort(
-          (a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime()
-        );
-        setEvents(sorted.slice(0, 5));
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{
-        height: 1, background: "#e5e7eb", margin: "8px 4px 14px",
-      }} />
-      <div style={{
-        fontSize: 11, fontWeight: 600, color: "#9ca3af",
-        textTransform: "uppercase", letterSpacing: "0.06em",
-        padding: "0 4px", marginBottom: 8,
-      }}>
-        Upcoming
-      </div>
-
-      {loading && (
-        <div style={{ fontSize: 12, color: "#9ca3af", padding: "0 4px" }}>Loading…</div>
-      )}
-
-      {!loading && events.length === 0 && (
-        <div style={{ fontSize: 12, color: "#9ca3af", padding: "0 4px" }}>No upcoming events</div>
-      )}
-
-      {!loading && events.length > 0 && (
-        <div style={{ display: "grid", gap: 5 }}>
-          {events.map((ev) => {
-            const d = new Date(ev.startDateTime);
-            const label =
-              ev.status === "CONFIRMED" && ev.artist
-                ? ev.artist.name
-                : ev.venue.name
-                  ?? (ev.venue.postcode ? `Area ${ev.venue.postcode}` : "Availability ask");
-            const dot = SIDEBAR_EVENT_DOT[ev.status];
-            return (
-              <div
-                key={ev.id}
-                style={{
-                  padding: "7px 10px", borderRadius: 8,
-                  background: "#f9fafb", borderLeft: `3px solid ${dot}`,
-                }}
-              >
-                <div style={{
-                  fontWeight: 600, fontSize: 12, color: "#374151",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {label}
-                </div>
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                  {d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
-                  {" · "}
-                  {d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type AuthState =
@@ -292,36 +211,23 @@ const sidebarNavStyle = ({ isActive }: { isActive: boolean }): React.CSSProperti
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "10px 14px",
+  padding: "10px 12px",
   borderRadius: 8,
   textDecoration: "none",
-  color: isActive ? "#c41e3a" : "#374151",
-  background: isActive ? "#fdecea" : "transparent",
-  fontWeight: isActive ? 600 : 400,
+  color: isActive ? colors.brand : "#374151",
+  background: isActive ? colors.brandSoft : "transparent",
+  fontWeight: isActive ? 600 : 500,
   fontSize: 14,
+  borderLeft: isActive ? `3px solid ${colors.brand}` : "3px solid transparent",
 });
 
-const topTabStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid rgba(255,255,255,0.45)",
-  color: "#fff",
-  borderRadius: 6,
-  padding: "6px 14px",
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: "pointer",
-};
-
-const logoutBtnStyle: React.CSSProperties = {
-  padding: "6px 14px",
-  color: "#c41e3a",
-  background: "#fff",
-  border: "none",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: 500,
-  fontSize: 13,
-};
+function displayNameFor(user: AuthUser): string {
+  if (user.name?.trim()) return user.name.trim();
+  const local = user.email.split("@")[0] ?? user.email;
+  return local
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function AppShell({
   user,
@@ -333,59 +239,74 @@ function AppShell({
   sidebar: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
-      {/* Top bar */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
+        color: colors.text,
+        background: colors.pageBg,
+      }}
+    >
       <header
         style={{
-          background: "#c41e3a",
+          background: colors.brand,
           padding: "0 24px",
           display: "flex",
           alignItems: "center",
-          height: 64,
+          height: 56,
           flexShrink: 0,
         }}
       >
         <img
           src="/rostar-logo.png"
           alt="Rostar"
-          style={{ height: 48, width: "auto", mixBlendMode: "lighten" }}
+          style={{ height: 40, width: "auto", mixBlendMode: "lighten" }}
         />
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          {(["Settings", "Help", "My Account"] as const).map((label) => (
-            <button key={label} type="button" style={topTabStyle}>
-              {label}
-            </button>
-          ))}
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginLeft: 10 }}>
-            {user.email}
-          </span>
-          <button type="button" onClick={onLogout} style={logoutBtnStyle}>
-            Logout
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+          <button
+            type="button"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "none",
+              color: "#fff",
+              cursor: "pointer",
+              padding: "6px 10px",
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: "inherit",
+            }}
+          >
+            <HelpIcon />
+            Help
           </button>
+          <UserMenu user={user} displayName={displayNameFor(user)} onLogout={onLogout} />
         </div>
       </header>
 
-      {/* Body */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left sidebar */}
         <nav
           style={{
-            width: 220,
-            background: "#fff",
-            borderRight: "1px solid #e5e7eb",
-            padding: "20px 12px",
+            width: 240,
+            background: colors.sidebarBg,
+            borderRight: `1px solid ${colors.border}`,
+            padding: "16px 12px",
             display: "flex",
             flexDirection: "column",
-            gap: 4,
+            gap: 2,
             flexShrink: 0,
-            overflowY: "auto",
+            overflow: "hidden",
           }}
         >
           {sidebar}
         </nav>
 
-        {/* Main content */}
-        <main style={{ flex: 1, overflow: "auto", padding: "24px", background: "#f9fafb" }}>
+        <main style={{ flex: 1, overflow: "auto", padding: "28px 32px", background: colors.pageBg }}>
           <Outlet />
         </main>
       </div>
@@ -417,7 +338,7 @@ function AdminLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void 
           <NavLink to="/invoices" style={sidebarNavStyle}>
             <InvoicesIcon /> Invoices
           </NavLink>
-          <UpcomingEvents />
+          <UpcomingEvents portal="admin" />
         </>
       }
     />
@@ -464,12 +385,12 @@ function ArtistLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void
           </NavLink>
           <ArtistInboxNavLink />
           <NavLink to="/artist/unavailability" style={sidebarNavStyle}>
-            <UnavailabilityIcon /> Unavailability
+            <AvailabilityIcon /> Availability
           </NavLink>
           <NavLink to="/artist/profile" style={sidebarNavStyle}>
             <ProfileIcon /> Profile
           </NavLink>
-          <UpcomingEvents />
+          <UpcomingEvents portal="artist" />
         </>
       }
     />
@@ -521,7 +442,7 @@ function VenueLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void 
           <NavLink to="/venue/calendar" style={sidebarNavStyle}>
             <CalendarIcon /> My Calendar
           </NavLink>
-          <UpcomingEvents />
+          <UpcomingEvents portal="venue" />
         </>
       }
     />
