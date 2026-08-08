@@ -92,6 +92,7 @@ export default function ArtistInbox() {
       return;
     }
     setAvailability((prev) => prev.filter((r) => r.id !== id));
+    window.dispatchEvent(new Event("artist-inbox-changed"));
   }
 
   async function respondOffer(id: string, accept: boolean) {
@@ -111,6 +112,7 @@ export default function ArtistInbox() {
       return;
     }
     setOffers((prev) => prev.filter((o) => o.id !== id));
+    window.dispatchEvent(new Event("artist-inbox-changed"));
   }
 
   const empty = !loading && availability.length === 0 && offers.length === 0;

@@ -120,6 +120,71 @@ function InboxIcon() {
   );
 }
 
+const ARTIST_INBOX_CHANGED = "artist-inbox-changed";
+
+function ArtistInboxNavLink() {
+  const location = useLocation();
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function load() {
+      try {
+        const [availability, offers] = await Promise.all([
+          apiGet<{ id: string }[]>("/artists/me/availability-requests"),
+          apiGet<{ id: string }[]>("/artists/me/offers"),
+        ]);
+        if (mounted) setCount(availability.length + offers.length);
+      } catch {
+        if (mounted) setCount(0);
+      }
+    }
+
+    void load();
+    const onChanged = () => { void load(); };
+    window.addEventListener(ARTIST_INBOX_CHANGED, onChanged);
+    return () => {
+      mounted = false;
+      window.removeEventListener(ARTIST_INBOX_CHANGED, onChanged);
+    };
+  }, [location.pathname]);
+
+  return (
+    <NavLink to="/artist/inbox" style={sidebarNavStyle}>
+      <span style={{ position: "relative", display: "inline-flex" }}>
+        <InboxIcon />
+        {count > 0 && (
+          <span
+            aria-label={`${count} unread`}
+            style={{
+              position: "absolute",
+              top: -5,
+              right: -7,
+              minWidth: 16,
+              height: 16,
+              borderRadius: 999,
+              background: "#c41e3a",
+              color: "#fff",
+              fontSize: 10,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "0 4px",
+              lineHeight: 1,
+              boxSizing: "border-box",
+            }}
+          >
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </span>
+      Inbox
+    </NavLink>
+  );
+}
+
 // ── Upcoming events sidebar widget ────────────────────────────────────────────
 
 type SidebarEvent = {
@@ -395,9 +460,7 @@ function ArtistLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void
           <NavLink to="/artist/calendar" style={sidebarNavStyle}>
             <CalendarIcon /> Calendar
           </NavLink>
-          <NavLink to="/artist/inbox" style={sidebarNavStyle}>
-            <InboxIcon /> Inbox
-          </NavLink>
+          <ArtistInboxNavLink />
           <NavLink to="/artist/unavailability" style={sidebarNavStyle}>
             <UnavailabilityIcon /> Unavailability
           </NavLink>
