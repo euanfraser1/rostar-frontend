@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet, apiPatch } from "../api/http";
+import { apiGet, apiPatch, apiPost } from "../api/http";
 import { Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
@@ -27,6 +27,32 @@ type ArtistUnavailability = {
   endDateTime: string;
   notes: string | null;
   artist: { id: string; name: string };
+};
+
+type RequestStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "WITHDRAWN";
+type OfferStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "WITHDRAWN";
+
+type AvailabilityRequest = {
+  id: string;
+  eventId: string;
+  artistId: string;
+  status: RequestStatus;
+  artist: { id: string; name: string };
+};
+
+type BookingOffer = {
+  id: string;
+  eventId: string;
+  artistId: string;
+  status: OfferStatus;
+  artist: { id: string; name: string };
+};
+
+const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
+  PENDING: "Pending",
+  ACCEPTED: "Available",
+  DECLINED: "Declined",
+  WITHDRAWN: "Withdrawn",
 };
 
 const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
@@ -66,7 +92,15 @@ export default function Calendar() {
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
-  // Assign-artist inline form state
+  // Booking panel state (keyed by event id)
+  const [requestsByEvent, setRequestsByEvent] = useState<Record<string, AvailabilityRequest[]>>({});
+  const [offersByEvent, setOffersByEvent] = useState<Record<string, BookingOffer[]>>({});
+  const [requestSelectByEvent, setRequestSelectByEvent] = useState<Record<string, string[]>>({});
+  const [offerArtistByEvent, setOfferArtistByEvent] = useState<Record<string, string>>({});
+  const [bookingBusyId, setBookingBusyId] = useState<string | null>(null);
+  const [bookingErrorByEvent, setBookingErrorByEvent] = useState<Record<string, string | null>>({});
+
+  // Offline assign override
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignArtistId, setAssignArtistId] = useState("");
   const [assignStatus, setAssignStatus] = useState<EventStatus>("CONFIRMED");
@@ -161,6 +195,104 @@ export default function Calendar() {
     return ev.venue.name;
   }
 
+  // Load availability + offers when selected day's events change
+  useEffect(() => {
+    if (!selectedDayKey) return;
+    const dayEvents = eventsByDay.get(selectedDayKey) ?? [];
+    for (const ev of dayEvents) {
+      void loadBookingState(ev.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDayKey, events]);
+
+  async function loadBookingState(eventId: string) {
+    try {
+      const [requests, offers] = await Promise.all([
+        apiGet<AvailabilityRequest[]>(`/events/${eventId}/availability-requests`),
+        apiGet<BookingOffer[]>(`/events/${eventId}/offers`),
+      ]);
+      setRequestsByEvent((prev) => ({ ...prev, [eventId]: requests }));
+      setOffersByEvent((prev) => ({ ...prev, [eventId]: offers }));
+    } catch {
+      // non-fatal; panel shows empty
+    }
+  }
+
+  function setBookingError(eventId: string, message: string | null) {
+    setBookingErrorByEvent((prev) => ({ ...prev, [eventId]: message }));
+  }
+
+  function toggleRequestArtist(eventId: string, artistId: string) {
+    setRequestSelectByEvent((prev) => {
+      const current = prev[eventId] ?? [];
+      const next = current.includes(artistId)
+        ? current.filter((id) => id !== artistId)
+        : [...current, artistId];
+      return { ...prev, [eventId]: next };
+    });
+  }
+
+  async function sendAvailabilityRequests(eventId: string) {
+    const artistIds = requestSelectByEvent[eventId] ?? [];
+    if (artistIds.length === 0) {
+      setBookingError(eventId, "Select at least one artist.");
+      return;
+    }
+    setBookingBusyId(eventId);
+    setBookingError(eventId, null);
+    const result = await apiPost<AvailabilityRequest[], { artistIds: string[] }>(
+      `/events/${eventId}/availability-requests`,
+      { artistIds }
+    );
+    setBookingBusyId(null);
+    if (!result.ok) {
+      setBookingError(eventId, result.message);
+      return;
+    }
+    setRequestSelectByEvent((prev) => ({ ...prev, [eventId]: [] }));
+    await loadBookingState(eventId);
+  }
+
+  async function sendOffer(eventId: string) {
+    const artistId = offerArtistByEvent[eventId] ?? "";
+    if (!artistId) {
+      setBookingError(eventId, "Select an available artist to offer.");
+      return;
+    }
+    setBookingBusyId(eventId);
+    setBookingError(eventId, null);
+    const result = await apiPost<{ offer: BookingOffer; event: GigEvent }, { artistId: string }>(
+      `/events/${eventId}/offers`,
+      { artistId }
+    );
+    setBookingBusyId(null);
+    if (!result.ok) {
+      setBookingError(eventId, result.message);
+      return;
+    }
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data.event : e)));
+    setOfferArtistByEvent((prev) => ({ ...prev, [eventId]: "" }));
+    await loadBookingState(eventId);
+  }
+
+  async function withdrawOffer(eventId: string, offerId: string) {
+    setBookingBusyId(eventId);
+    setBookingError(eventId, null);
+    const result = await apiPost<{ offer: BookingOffer; event: GigEvent | null }, Record<string, never>>(
+      `/offers/${offerId}/withdraw`,
+      {}
+    );
+    setBookingBusyId(null);
+    if (!result.ok) {
+      setBookingError(eventId, result.message);
+      return;
+    }
+    if (result.data.event) {
+      setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data.event! : e)));
+    }
+    await loadBookingState(eventId);
+  }
+
   function openAssign(ev: GigEvent) {
     setAssigningId(ev.id);
     setAssignArtistId(ev.artist?.id ?? "");
@@ -193,9 +325,9 @@ export default function Calendar() {
       return;
     }
 
-    // Update the event in local state so the calendar refreshes instantly
     setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
     setAssigningId(null);
+    await loadBookingState(eventId);
   }
 
   async function clearArtist(eventId: string) {
@@ -205,6 +337,7 @@ export default function Calendar() {
     );
     if (result.ok) {
       setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
+      await loadBookingState(eventId);
     }
   }
 
@@ -352,6 +485,15 @@ export default function Calendar() {
             {selectedEvents.map((ev) => {
               const cfg = STATUS_CONFIG[ev.status];
               const isAssigning = assigningId === ev.id;
+              const requests = requestsByEvent[ev.id] ?? [];
+              const offers = offersByEvent[ev.id] ?? [];
+              const pendingOffer = offers.find((o) => o.status === "PENDING") ?? null;
+              const acceptedArtists = requests.filter((r) => r.status === "ACCEPTED");
+              const selectedForRequest = requestSelectByEvent[ev.id] ?? [];
+              const busy = bookingBusyId === ev.id;
+              const bookingError = bookingErrorByEvent[ev.id] ?? null;
+              const alreadyRequestedIds = new Set(requests.map((r) => r.artistId));
+              const canBook = ev.status === "UNBOOKED" || ev.status === "OFFERED";
 
               return (
                 <div
@@ -376,17 +518,17 @@ export default function Calendar() {
                       </span>
                     </div>
 
-                    {/* Action buttons */}
                     <div style={{ display: "flex", gap: 6 }}>
                       {!isAssigning && (
                         <button
                           onClick={() => openAssign(ev)}
                           style={{
                             padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                            background: "#a10000", color: "#fff", border: "none", cursor: "pointer",
+                            background: "transparent", color: "#a10000",
+                            border: "1px solid #a10000", cursor: "pointer",
                           }}
                         >
-                          {ev.artist ? "Reassign" : "Assign artist"}
+                          Booked offline
                         </button>
                       )}
                       {!isAssigning && ev.artist && (
@@ -394,8 +536,8 @@ export default function Calendar() {
                           onClick={() => clearArtist(ev.id)}
                           style={{
                             padding: "4px 10px", borderRadius: 6, fontSize: 12,
-                            background: "transparent", color: "#a10000",
-                            border: "1px solid #a10000", cursor: "pointer",
+                            background: "transparent", color: "#555",
+                            border: "1px solid #888", cursor: "pointer",
                           }}
                         >
                           Unassign
@@ -443,13 +585,152 @@ export default function Calendar() {
                     )}
                   </div>
 
-                  {/* Inline assign form */}
+                  {bookingError && (
+                    <p style={{ margin: "10px 0 0", color: "crimson", fontSize: 13 }}>{bookingError}</p>
+                  )}
+
+                  {/* Availability + offer booking flow */}
+                  {canBook && !isAssigning && (
+                    <div style={{
+                      marginTop: 12, padding: "12px 14px", borderRadius: 8,
+                      background: "rgba(255,255,255,0.75)", display: "grid", gap: 12,
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Availability</div>
+                        {requests.length === 0 ? (
+                          <p style={{ margin: "0 0 8px", fontSize: 13, opacity: 0.65 }}>No artists asked yet.</p>
+                        ) : (
+                          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 13 }}>
+                            {requests.map((r) => (
+                              <li key={r.id} style={{ marginBottom: 3 }}>
+                                <strong>{r.artist.name}</strong>
+                                {" — "}
+                                <span style={{
+                                  color:
+                                    r.status === "ACCEPTED" ? "#1a7a4a" :
+                                    r.status === "DECLINED" ? "#a10000" :
+                                    r.status === "PENDING" ? "#7a5700" : "#6b7280",
+                                }}>
+                                  {REQUEST_STATUS_LABEL[r.status]}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {ev.status === "UNBOOKED" && (
+                          <>
+                            <div style={{
+                              display: "grid", gap: 4, maxHeight: 140, overflowY: "auto",
+                              padding: 8, border: "1px solid #e5e7eb", borderRadius: 6, background: "#fff",
+                              marginBottom: 8,
+                            }}>
+                              {artists.map((a) => {
+                                const conflicts = artistConflictsForEvent(a.id, ev);
+                                const already = alreadyRequestedIds.has(a.id);
+                                const checked = selectedForRequest.includes(a.id);
+                                return (
+                                  <label key={a.id} style={{
+                                    display: "flex", alignItems: "center", gap: 8, fontSize: 13,
+                                    opacity: already && requests.find((r) => r.artistId === a.id)?.status === "PENDING" ? 0.55 : 1,
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={busy}
+                                      onChange={() => toggleRequestArtist(ev.id, a.id)}
+                                    />
+                                    <span>
+                                      {a.name}
+                                      {conflicts.length > 0 ? " (unavailable)" : ""}
+                                      {already ? " · already asked" : ""}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <button
+                              onClick={() => sendAvailabilityRequests(ev.id)}
+                              disabled={busy || selectedForRequest.length === 0}
+                              style={{
+                                padding: "6px 14px", borderRadius: 6, fontWeight: 600, fontSize: 13,
+                                background: busy || selectedForRequest.length === 0 ? "#999" : "#a10000",
+                                color: "#fff", border: "none",
+                                cursor: busy || selectedForRequest.length === 0 ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {busy ? "Sending…" : "Request availability"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Offer</div>
+                        {pendingOffer ? (
+                          <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <span>
+                              Pending with <strong>{pendingOffer.artist.name}</strong>
+                            </span>
+                            <button
+                              onClick={() => withdrawOffer(ev.id, pendingOffer.id)}
+                              disabled={busy}
+                              style={{
+                                padding: "4px 10px", borderRadius: 6, fontSize: 12,
+                                background: "transparent", border: "1px solid #888",
+                                color: "#555", cursor: busy ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              Withdraw offer
+                            </button>
+                          </div>
+                        ) : ev.status === "UNBOOKED" ? (
+                          acceptedArtists.length === 0 ? (
+                            <p style={{ margin: 0, fontSize: 13, opacity: 0.65 }}>
+                              Waiting for artists to accept availability.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              <select
+                                value={offerArtistByEvent[ev.id] ?? ""}
+                                onChange={(e) => setOfferArtistByEvent((prev) => ({ ...prev, [ev.id]: e.target.value }))}
+                                disabled={busy}
+                                style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc", fontSize: 13 }}
+                              >
+                                <option value="">Select available artist…</option>
+                                {acceptedArtists.map((r) => (
+                                  <option key={r.artistId} value={r.artistId}>{r.artist.name}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => sendOffer(ev.id)}
+                                disabled={busy || !(offerArtistByEvent[ev.id])}
+                                style={{
+                                  padding: "6px 14px", borderRadius: 6, fontWeight: 600, fontSize: 13,
+                                  background: busy || !(offerArtistByEvent[ev.id]) ? "#999" : "#a10000",
+                                  color: "#fff", border: "none",
+                                  cursor: busy || !(offerArtistByEvent[ev.id]) ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {busy ? "Sending…" : "Send offer"}
+                              </button>
+                            </div>
+                          )
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Offline assign form */}
                   {isAssigning && (
                     <div style={{
                       marginTop: 12, padding: "12px 14px", borderRadius: 8,
                       background: "rgba(255,255,255,0.7)", display: "grid", gap: 10,
                     }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>Assign artist</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>Booked offline</div>
+                      <p style={{ margin: 0, fontSize: 12, opacity: 0.7 }}>
+                        Bypass the availability/offer flow (e.g. booked by phone).
+                      </p>
 
                       {assignError && (
                         <p style={{ margin: 0, color: "crimson", fontSize: 13 }}>{assignError}</p>
@@ -475,7 +756,6 @@ export default function Calendar() {
                         </select>
                       </label>
 
-                      {/* Unavailability warning */}
                       {assignArtistId && (() => {
                         const conflicts = artistConflictsForEvent(assignArtistId, ev);
                         if (conflicts.length === 0) return null;
@@ -485,16 +765,8 @@ export default function Calendar() {
                             background: "#fff8e1", border: "1px solid #f5c400",
                             fontSize: 13, color: "#7a5700",
                           }}>
-                            <strong>⚠ Artist has marked themselves unavailable for this time:</strong>
-                            <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
-                              {conflicts.map((c) => (
-                                <li key={c.id}>
-                                  {new Date(c.startDateTime).toLocaleString()} – {new Date(c.endDateTime).toLocaleString()}
-                                  {c.notes ? ` — ${c.notes}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                            <div style={{ marginTop: 6, opacity: 0.8 }}>You can still proceed with the booking.</div>
+                            <strong>Artist has marked themselves unavailable for this time.</strong>
+                            <div style={{ marginTop: 6, opacity: 0.8 }}>You can still proceed.</div>
                           </div>
                         );
                       })()}
