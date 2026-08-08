@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
+type AvailabilityStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "WITHDRAWN";
 
 type GigEvent = {
   id: string;
@@ -12,7 +13,8 @@ type GigEvent = {
   status: EventStatus;
   artistFee: string | null;
   notes: string | null;
-  venue: { id: string; name: string; postcode: string };
+  myAvailabilityStatus?: AvailabilityStatus | null;
+  venue: { id: string; name: string | null; postcode: string };
 };
 
 type Unavailability = {
@@ -22,11 +24,33 @@ type Unavailability = {
   notes: string | null;
 };
 
-const STATUS_CONFIG: Record<EventStatus, { label: string; bg: string; color: string; dot: string }> = {
+type DisplayStatus = {
+  label: string;
+  bg: string;
+  color: string;
+  dot: string;
+};
+
+const STATUS_CONFIG: Record<EventStatus, DisplayStatus> = {
   UNBOOKED:  { label: "Unbooked",  bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" },
   OFFERED:   { label: "Offered",   bg: "#fff4cc", color: "#7a5700", dot: "#fdbc00" },
   CONFIRMED: { label: "Confirmed", bg: "#fde8e8", color: "#a10000", dot: "#a10000" },
 };
+
+function displayForEvent(ev: GigEvent): DisplayStatus {
+  if (ev.status === "UNBOOKED" && ev.myAvailabilityStatus === "ACCEPTED") {
+    return { label: "You're available", bg: "#e6f9f0", color: "#1a7a4a", dot: "#22c55e" };
+  }
+  if (ev.status === "UNBOOKED") {
+    return { label: "Availability ask", bg: "#dde8f5", color: "#2a5298", dot: "#5a82c4" };
+  }
+  return STATUS_CONFIG[ev.status];
+}
+
+function eventPlaceLabel(ev: GigEvent): string {
+  if (ev.venue.name) return ev.venue.name;
+  return ev.venue.postcode ? `Area ${ev.venue.postcode}` : "Availability check";
+}
 
 function pad2(n: number) { return String(n).padStart(2, "0"); }
 function localDateKey(d: Date) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
@@ -165,6 +189,8 @@ export default function ArtistGigs() {
                 Colour key
               </div>
               {[
+                { label: "Availability ask", dot: "#5a82c4" },
+                { label: "You're available", dot: "#22c55e" },
                 { label: "Offered",     dot: "#fdbc00" },
                 { label: "Confirmed",   dot: "#a10000" },
                 { label: "Unavailable", dot: "#b0b0b0" },
@@ -232,7 +258,8 @@ export default function ArtistGigs() {
                   </div>
                 )}
                 {dayEvents.slice(0, hasUnavail ? 1 : 2).map((ev) => {
-                  const cfg = STATUS_CONFIG[ev.status];
+                  const cfg = displayForEvent(ev);
+                  const place = eventPlaceLabel(ev);
                   return (
                     <div
                       key={ev.id}
@@ -242,9 +269,9 @@ export default function ArtistGigs() {
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         borderLeft: `3px solid ${cfg.dot}`,
                       }}
-                      title={`${formatTime(ev.startDateTime)} — ${ev.venue.name} [${ev.status}]`}
+                      title={`${formatTime(ev.startDateTime)} — ${place} [${cfg.label}]`}
                     >
-                      {formatTime(ev.startDateTime)} {ev.venue.name}
+                      {formatTime(ev.startDateTime)} {place}
                     </div>
                   );
                 })}
@@ -294,7 +321,8 @@ export default function ArtistGigs() {
         {selectedEvents.length > 0 && (
           <div style={{ display: "grid", gap: 12 }}>
             {selectedEvents.map((ev) => {
-              const cfg = STATUS_CONFIG[ev.status];
+              const cfg = displayForEvent(ev);
+              const availabilityPhase = ev.status === "UNBOOKED";
               return (
                 <div
                   key={ev.id}
@@ -316,23 +344,42 @@ export default function ArtistGigs() {
                     </span>
                   </div>
                   <div style={{ fontSize: 14, display: "grid", gap: 4 }}>
-                    <div>
-                      <span style={{ opacity: 0.6 }}>Venue: </span>
-                      <strong>{ev.venue.name}</strong>
-                      {ev.venue.postcode && (
-                        <span style={{ opacity: 0.6 }}> · {ev.venue.postcode}</span>
-                      )}
-                    </div>
-                    {ev.artistFee && (
-                      <div>
-                        <span style={{ opacity: 0.6 }}>Fee: </span>
-                        <strong>{formatFee(ev.artistFee)}</strong>
-                      </div>
-                    )}
-                    {ev.notes && (
-                      <div style={{ marginTop: 4, opacity: 0.8 }}>
-                        <span style={{ opacity: 0.7 }}>Notes: </span>{ev.notes}
-                      </div>
+                    {availabilityPhase ? (
+                      <>
+                        <div>
+                          <span style={{ opacity: 0.6 }}>Venue: </span>
+                          <strong>{ev.venue.name || "—"}</strong>
+                          {ev.venue.postcode && (
+                            <span style={{ opacity: 0.6 }}> · {ev.venue.postcode}</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 13, opacity: 0.7 }}>
+                          {ev.myAvailabilityStatus === "ACCEPTED"
+                            ? "You said you’re available. Waiting for an offer from Rostar."
+                            : "Respond in Inbox if you haven’t already."}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <span style={{ opacity: 0.6 }}>Venue: </span>
+                          <strong>{ev.venue.name}</strong>
+                          {ev.venue.postcode && (
+                            <span style={{ opacity: 0.6 }}> · {ev.venue.postcode}</span>
+                          )}
+                        </div>
+                        {ev.artistFee && (
+                          <div>
+                            <span style={{ opacity: 0.6 }}>Fee: </span>
+                            <strong>{formatFee(ev.artistFee)}</strong>
+                          </div>
+                        )}
+                        {ev.notes && (
+                          <div style={{ marginTop: 4, opacity: 0.8 }}>
+                            <span style={{ opacity: 0.7 }}>Notes: </span>{ev.notes}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

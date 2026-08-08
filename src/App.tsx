@@ -191,7 +191,7 @@ type SidebarEvent = {
   id: string;
   startDateTime: string;
   status: "UNBOOKED" | "OFFERED" | "CONFIRMED";
-  venue: { id: string; name: string };
+  venue: { id: string; name: string | null; postcode?: string };
   artist: { id: string; name: string } | null;
 };
 
@@ -245,9 +245,11 @@ function UpcomingEvents() {
         <div style={{ display: "grid", gap: 5 }}>
           {events.map((ev) => {
             const d = new Date(ev.startDateTime);
-            const label = ev.status === "CONFIRMED" && ev.artist
-              ? ev.artist.name
-              : ev.venue.name;
+            const label =
+              ev.status === "CONFIRMED" && ev.artist
+                ? ev.artist.name
+                : ev.venue.name
+                  ?? (ev.venue.postcode ? `Area ${ev.venue.postcode}` : "Availability ask");
             const dot = SIDEBAR_EVENT_DOT[ev.status];
             return (
               <div

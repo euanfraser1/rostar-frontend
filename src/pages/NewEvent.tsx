@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { apiGet, apiPost, apiPatch } from "../api/http";
+import { apiGet, apiPost } from "../api/http";
 
 type Venue = { id: string; name: string; postcode: string };
 type Artist = { id: string; name: string };
@@ -15,6 +15,8 @@ type CreateEventBody = {
   rostarCut?: string;
   notes?: string;
   repeatWeeklyCount?: number;
+  /** Immediately sends a pending availability request (does not book the artist). */
+  requestArtistId?: string;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -264,6 +266,7 @@ export default function NewEvent() {
     if (artistFee.trim()) body.artistFee = artistFee.trim();
     if (rostarCut.trim()) body.rostarCut = rostarCut.trim();
     if (notes.trim()) body.notes = notes.trim();
+    if (artistId) body.requestArtistId = artistId;
 
     if (repeatWeekly) {
       const n = parseInt(repeatCount, 10);
@@ -277,24 +280,13 @@ export default function NewEvent() {
       body
     );
 
+    setSubmitting(false);
+
     if (!result.ok) {
-      setSubmitting(false);
       setError(result.message);
       return;
     }
 
-    // If artist selected, assign via PATCH
-    if (artistId) {
-      const created = result.data;
-      const ids = Array.isArray(created) ? created.map((ev) => ev.id) : [created.id];
-      await Promise.all(
-        ids.map((id) =>
-          apiPatch<unknown, Record<string, unknown>>(`/events/${id}`, { artistId })
-        )
-      );
-    }
-
-    setSubmitting(false);
     navigate("/calendar");
   }
 
@@ -328,7 +320,7 @@ export default function NewEvent() {
         Create booking slot
       </h1>
       <p style={{ margin: "0 0 24px", fontSize: 14, color: "#6b7280" }}>
-        Create an unbooked event slot for a venue. You can assign an artist now or later.
+        Create an unbooked event slot for a venue. Optionally request availability from an artist now.
       </p>
 
       {error && (
@@ -391,14 +383,14 @@ export default function NewEvent() {
               <CardHeader icon={<IconUser />} title="2. Artist" />
               <div style={{ padding: "16px 20px" }}>
                 <label style={labelBase}>
-                  Assign artist (optional)
+                  Request availability from (optional)
                   <select
                     value={artistId}
                     onChange={(e) => setArtistId(e.target.value)}
                     disabled={submitting}
                     style={{ ...inputBase, appearance: "none", backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' strokeWidth='1.5' fill='none' strokeLinecap='round'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", paddingRight: 36 }}
                   >
-                    <option value="">Unassigned</option>
+                    <option value="">None — ask later</option>
                     {artists.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
@@ -406,6 +398,9 @@ export default function NewEvent() {
                     ))}
                   </select>
                 </label>
+                <p style={{ margin: "8px 0 0", fontSize: 12, color: "#9ca3af" }}>
+                  Sends an availability check to their inbox. Does not book them.
+                </p>
                 <button
                   type="button"
                   onClick={() => navigate("/artists")}
@@ -781,12 +776,12 @@ export default function NewEvent() {
               />
 
               <SummaryRow
-                label="Artist"
+                label="Availability"
                 value={
                   selectedArtist ? (
-                    selectedArtist.name
+                    <>Ask {selectedArtist.name}</>
                   ) : (
-                    <span style={{ color: "#9ca3af" }}>Unassigned</span>
+                    <span style={{ color: "#9ca3af" }}>Ask later</span>
                   )
                 }
               />

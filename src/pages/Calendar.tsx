@@ -569,7 +569,13 @@ export default function Calendar() {
                       <span style={{ opacity: 0.6 }}>Artist: </span>
                       {ev.artist
                         ? <strong>{ev.artist.name}</strong>
-                        : <em style={{ opacity: 0.5 }}>Unassigned</em>}
+                        : requests.length > 0
+                          ? (
+                            <em style={{ opacity: 0.75 }}>
+                              Availability asked — {requests.map((r) => r.artist.name).join(", ")}
+                            </em>
+                          )
+                          : <em style={{ opacity: 0.5 }}>Unassigned</em>}
                     </div>
                     {(ev.venueFee || ev.artistFee || ev.rostarCut) && (
                       <div style={{ display: "flex", gap: 16, marginTop: 4, flexWrap: "wrap" }}>

@@ -10,6 +10,7 @@ type AvailabilityItem = {
     startDateTime: string;
     endDateTime: string;
     status: string;
+    venueName: string;
     postcodePrefix: string;
   };
 };
@@ -225,7 +226,7 @@ export default function ArtistInbox() {
                   }}
                 >
                   <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
-                    Are you free?
+                    {r.event.venueName}
                   </div>
                   <div style={{ fontSize: 13, opacity: 0.85 }}>
                     {formatWhen(r.event.startDateTime)} –{" "}
