@@ -1,6 +1,8 @@
 # Rostar frontend
 
-Rostar’s React + Vite app for the Business Hub (admin) and artist flows. **Product context, API surface, and current UI layout** (red header, logo at `public/rostar-logo.png`, centered content column) are in **`README_CONTEXT.md`** in this folder.
+React + Vite app for the **admin**, **artist**, and **venue** portals. Shared shell: red header, left sidebar, Upcoming list. Logo: `public/rostar-logo.png`.
+
+**Product context, API surface, and current UI** — [`../rostar-backend/README_CONTEXT.md`](../rostar-backend/README_CONTEXT.md) (this folder’s `README_CONTEXT.md` points there).
 
 ---
 

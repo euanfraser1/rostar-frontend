@@ -1,5 +1,7 @@
 # Rostar — Context
 
-The single source of truth for project context, architecture, implementation status, and roadmap is at the monorepo root:
+The single source of truth for product context, architecture, implementation status, and roadmap is:
 
-**[`../README_CONTEXT.md`](../README_CONTEXT.md)**
+**[`../rostar-backend/README_CONTEXT.md`](../rostar-backend/README_CONTEXT.md)**
+
+Planning / next slices: [`../rostar-backend/README_PLANNING.md`](../rostar-backend/README_PLANNING.md)

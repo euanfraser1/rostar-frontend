@@ -44,9 +44,70 @@ function formatTimeRange(start: string, end: string): string {
   return `${start} – ${end} (${hrs}h)`;
 }
 
-function parseFee(val: string): number {
+function parseFee(val: string): number | null {
+  if (!val.trim()) return null;
   const n = parseFloat(val);
-  return isNaN(n) || n < 0 ? 0 : n;
+  if (isNaN(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+type FeeField = "venue" | "artist" | "rostar";
+
+type ResolvedFees = {
+  venue: number | null;
+  artist: number | null;
+  rostar: number | null;
+  /** The blank fee, once the other two are filled in. */
+  calculated: FeeField | null;
+  feeError: string | null;
+};
+
+// Venue fee = artist fee + Rostar cut. Any two determine the third.
+function resolveFees(venueRaw: string, artistRaw: string, rostarRaw: string): ResolvedFees {
+  const venue = parseFee(venueRaw);
+  const artist = parseFee(artistRaw);
+  const rostar = parseFee(rostarRaw);
+  const unresolved: ResolvedFees = { venue, artist, rostar, calculated: null, feeError: null };
+
+  if (venue != null && artist != null && rostar == null) {
+    const cut = Math.round((venue - artist) * 100) / 100;
+    if (cut < 0) {
+      return {
+        venue,
+        artist,
+        rostar: null,
+        calculated: "rostar",
+        feeError: "Artist fee is higher than the venue fee, so the Rostar cut would be negative.",
+      };
+    }
+    return { venue, artist, rostar: cut, calculated: "rostar", feeError: null };
+  }
+
+  if (venue != null && rostar != null && artist == null) {
+    const artistAmount = Math.round((venue - rostar) * 100) / 100;
+    if (artistAmount < 0) {
+      return {
+        venue,
+        artist: null,
+        rostar,
+        calculated: "artist",
+        feeError: "Rostar cut is higher than the venue fee, so the artist fee would be negative.",
+      };
+    }
+    return { venue, artist: artistAmount, rostar, calculated: "artist", feeError: null };
+  }
+
+  if (artist != null && rostar != null && venue == null) {
+    return {
+      venue: Math.round((artist + rostar) * 100) / 100,
+      artist,
+      rostar,
+      calculated: "venue",
+      feeError: null,
+    };
+  }
+
+  return unresolved;
 }
 
 function fmtGBP(n: number): string {
@@ -190,6 +251,58 @@ const labelBase: React.CSSProperties = {
   color: "#374151",
 };
 
+function FeeFieldInput({
+  label,
+  hint,
+  placeholder,
+  value,
+  onChange,
+  calculated,
+  amount,
+  disabled,
+}: {
+  label: string;
+  hint?: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+  calculated: boolean;
+  amount: number | null;
+  disabled?: boolean;
+}) {
+  return (
+    <label style={labelBase}>
+      {label}
+      <span style={{ fontSize: 11, fontWeight: 400, color: "#9ca3af", minHeight: 16 }}>
+        {hint ?? ""}
+      </span>
+      {calculated ? (
+        <div
+          style={{
+            ...inputBase,
+            background: "#f9fafb",
+            color: amount != null ? "#111827" : "#9ca3af",
+            fontWeight: amount != null ? 600 : 400,
+          }}
+        >
+          {amount != null ? fmtGBP(amount) : "—"}
+        </div>
+      ) : (
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          style={inputBase}
+        />
+      )}
+    </label>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function NewEvent() {
@@ -241,6 +354,9 @@ export default function NewEvent() {
     return new Date(`${d}T${t}`).toISOString();
   }
 
+  const fees = resolveFees(venueFee, artistFee, rostarCut);
+  const deposit = parseFee(depositAmount);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -262,9 +378,13 @@ export default function NewEvent() {
       endDateTime: endIso,
     };
 
-    if (venueFee.trim()) body.venueFee = venueFee.trim();
-    if (artistFee.trim()) body.artistFee = artistFee.trim();
-    if (rostarCut.trim()) body.rostarCut = rostarCut.trim();
+    if (fees.feeError) return setError(fees.feeError);
+    if (fees.venue == null || fees.artist == null || fees.rostar == null) {
+      return setError("Enter any two fees. The third is calculated automatically.");
+    }
+    body.venueFee = fees.venue.toFixed(2);
+    body.artistFee = fees.artist.toFixed(2);
+    body.rostarCut = fees.rostar.toFixed(2);
     if (notes.trim()) body.notes = notes.trim();
     if (artistId) body.requestArtistId = artistId;
 
@@ -293,10 +413,6 @@ export default function NewEvent() {
   // Derived summary values
   const selectedVenue = venues.find((v) => v.id === venueId);
   const selectedArtist = artists.find((a) => a.id === artistId);
-  // Venue pays artist fee + Rostar cut (venue fee is the invoiced total — same sum).
-  const totalFee = parseFee(artistFee) + parseFee(rostarCut);
-  const hasFees = artistFee || rostarCut;
-
   const paymentBadgeColor: Record<string, string> = {
     Unpaid: "#f59e0b",
     Paid: "#22c55e",
@@ -481,73 +597,51 @@ export default function NewEvent() {
           <Card>
             <CardHeader icon={<IconPound />} title="4. Fees" />
             <div style={{ padding: "16px 20px" }}>
+              <p style={{ margin: "0 0 14px", fontSize: 13, color: "#6b7280" }}>
+                Enter any two fees. The third is calculated so the venue fee equals the artist fee plus the Rostar cut. Clear a fee to calculate a different one.
+              </p>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr 1fr auto",
+                  gridTemplateColumns: "1fr 1fr 1fr",
                   gap: 16,
                   alignItems: "end",
                 }}
               >
-                <label style={labelBase}>
-                  Venue fee (£)
-                  <span style={{ fontSize: 11, fontWeight: 400, color: "#9ca3af" }}>
-                    Invoiced to venue
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="e.g. 300"
-                    value={venueFee}
-                    onChange={(e) => setVenueFee(e.target.value)}
-                    disabled={submitting}
-                    style={inputBase}
-                  />
-                </label>
-                <label style={labelBase}>
-                  Artist fee (£)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="e.g. 200"
-                    value={artistFee}
-                    onChange={(e) => setArtistFee(e.target.value)}
-                    disabled={submitting}
-                    style={inputBase}
-                  />
-                </label>
-                <label style={labelBase}>
-                  Rostar cut (£)
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="e.g. 100"
-                    value={rostarCut}
-                    onChange={(e) => setRostarCut(e.target.value)}
-                    disabled={submitting}
-                    style={inputBase}
-                  />
-                </label>
-                {hasFees && (
-                  <div style={{ paddingBottom: 2 }}>
-                    <div style={{ fontSize: 11, color: "#c41e3a", fontWeight: 600, marginBottom: 2 }}>
-                      Venue pays
-                    </div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: "#111827", lineHeight: 1.1 }}>
-                      {fmtGBP(totalFee)}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                      (Artist fee + Rostar cut)
-                    </div>
-                  </div>
-                )}
+                <FeeFieldInput
+                  label="Venue fee (£)"
+                  hint={fees.calculated === "venue" ? "Calculated · invoiced to venue" : "Invoiced to venue"}
+                  placeholder="e.g. 300"
+                  value={venueFee}
+                  onChange={setVenueFee}
+                  calculated={fees.calculated === "venue"}
+                  amount={fees.venue}
+                  disabled={submitting}
+                />
+                <FeeFieldInput
+                  label="Artist fee (£)"
+                  hint={fees.calculated === "artist" ? "Calculated" : undefined}
+                  placeholder="e.g. 200"
+                  value={artistFee}
+                  onChange={setArtistFee}
+                  calculated={fees.calculated === "artist"}
+                  amount={fees.artist}
+                  disabled={submitting}
+                />
+                <FeeFieldInput
+                  label="Rostar cut (£)"
+                  hint={fees.calculated === "rostar" ? "Calculated" : undefined}
+                  placeholder="e.g. 100"
+                  value={rostarCut}
+                  onChange={setRostarCut}
+                  calculated={fees.calculated === "rostar"}
+                  amount={fees.rostar}
+                  disabled={submitting}
+                />
               </div>
-              {venueFee && hasFees && parseFee(venueFee) !== totalFee && (
+              {fees.feeError && (
                 <p style={{ margin: "10px 0 0", fontSize: 12, color: "#b45309" }}>
-                  Venue fee ({fmtGBP(parseFee(venueFee))}) differs from artist fee + Rostar cut ({fmtGBP(totalFee)}).
+                  {fees.feeError}
                 </p>
               )}
             </div>
@@ -808,34 +902,20 @@ export default function NewEvent() {
                 </div>
                 <SummaryRow
                   label="Venue fee"
-                  value={venueFee ? fmtGBP(parseFee(venueFee)) : <span style={{ color: "#9ca3af" }}>—</span>}
+                  value={fees.venue != null ? fmtGBP(fees.venue) : <span style={{ color: "#9ca3af" }}>—</span>}
                 />
                 <div style={{ marginTop: 8 }}>
                   <SummaryRow
                     label="Artist fee"
-                    value={artistFee ? fmtGBP(parseFee(artistFee)) : <span style={{ color: "#9ca3af" }}>—</span>}
+                    value={fees.artist != null ? fmtGBP(fees.artist) : <span style={{ color: "#9ca3af" }}>—</span>}
                   />
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <SummaryRow
                     label="Rostar cut"
-                    value={rostarCut ? fmtGBP(parseFee(rostarCut)) : <span style={{ color: "#9ca3af" }}>—</span>}
+                    value={fees.rostar != null ? fmtGBP(fees.rostar) : <span style={{ color: "#9ca3af" }}>—</span>}
                   />
                 </div>
-                {hasFees && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      paddingTop: 10,
-                      borderTop: "1px solid #f3f4f6",
-                    }}
-                  >
-                    <SummaryRow
-                      label={<strong>Venue pays</strong>}
-                      value={<strong>{fmtGBP(totalFee)}</strong>}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* Payment status */}
@@ -877,7 +957,7 @@ export default function NewEvent() {
                 <div style={{ marginTop: 8 }}>
                   <SummaryRow
                     label="Deposit"
-                    value={depositAmount ? fmtGBP(parseFee(depositAmount)) : <span style={{ color: "#9ca3af" }}>Not set</span>}
+                    value={deposit != null ? fmtGBP(deposit) : <span style={{ color: "#9ca3af" }}>Not set</span>}
                   />
                 </div>
               </div>
