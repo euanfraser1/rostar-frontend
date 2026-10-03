@@ -649,7 +649,7 @@ export default function Calendar() {
                                     <span>
                                       {a.name}
                                       {conflicts.length > 0 ? " (unavailable)" : ""}
-                                      {already ? " · already asked" : ""}
+                                      {already ? " · Requested" : ""}
                                     </span>
                                   </label>
                                 );

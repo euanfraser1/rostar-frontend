@@ -14,7 +14,6 @@ type Venue = {
   paSystem: PaSystem | null;
   technicalNotes: string | null;
   notes: string | null;
-  isLiveVenue: boolean;
   user: VenueUser | null;
 };
 
@@ -88,16 +87,6 @@ function PaBadge({ pa }: { pa: PaSystem | null }) {
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: c.bg, color: c.color }}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
       {PA_LABEL[pa]}
-    </span>
-  );
-}
-
-function LiveBadge({ live }: { live: boolean }) {
-  if (!live) return null;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#f0f4ff", color: "#3b5bdb" }}>
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4a1 1 0 011-1h4a1 1 0 011 1v4"/></svg>
-      Live venue
     </span>
   );
 }
@@ -280,14 +269,14 @@ function DetailPanel({
   // Edit state for each section
   const [basicDraft, setBasicDraft] = useState({ name: venue.name, postcode: venue.postcode });
   const [contactDraft, setContactDraft] = useState({ phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" });
-  const [techDraft, setTechDraft] = useState({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "", isLiveVenue: venue.isLiveVenue });
+  const [techDraft, setTechDraft] = useState({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "" });
   const [notesDraft, setNotesDraft] = useState(venue.notes ?? "");
 
   // Reset drafts when venue changes
   useEffect(() => {
     setBasicDraft({ name: venue.name, postcode: venue.postcode });
     setContactDraft({ phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" });
-    setTechDraft({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "", isLiveVenue: venue.isLiveVenue });
+    setTechDraft({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "" });
     setNotesDraft(venue.notes ?? "");
     setEditSection(null);
     setEvents([]);
@@ -421,29 +410,21 @@ function DetailPanel({
             <Section
               title="Technical requirements"
               editing={editSection === "technical"}
-              onEdit={() => { setTechDraft({ paSystem: venue.paSystem ?? "", technicalNotes: venue.technicalNotes ?? "", isLiveVenue: venue.isLiveVenue }); setEditSection("technical"); }}
+              onEdit={() => { setTechDraft({ paSystem: venue.paSystem ?? "", technicalNotes: venue.technicalNotes ?? "" }); setEditSection("technical"); }}
               onCancel={() => setEditSection(null)}
-              onSave={() => saveSection({ paSystem: techDraft.paSystem || null, technicalNotes: techDraft.technicalNotes || null, isLiveVenue: techDraft.isLiveVenue })}
+              onSave={() => saveSection({ paSystem: techDraft.paSystem || null, technicalNotes: techDraft.technicalNotes || null })}
               saving={saving}
             >
               {editSection === "technical" ? (
                 <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div>
-                      <label style={labelStyle}>PA system</label>
-                      <select value={techDraft.paSystem} onChange={e => setTechDraft(d => ({ ...d, paSystem: e.target.value as PaSystem | "" }))} style={{ ...inputStyle, background: "#fff" }}>
-                        <option value="">None</option>
-                        <option value="FULL_PA">Full PA</option>
-                        <option value="LIMITED_PA">Limited PA</option>
-                        <option value="NO_PA">No PA</option>
-                      </select>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
-                        <input type="checkbox" checked={techDraft.isLiveVenue} onChange={e => setTechDraft(d => ({ ...d, isLiveVenue: e.target.checked }))} />
-                        Live venue
-                      </label>
-                    </div>
+                  <div>
+                    <label style={labelStyle}>PA system</label>
+                    <select value={techDraft.paSystem} onChange={e => setTechDraft(d => ({ ...d, paSystem: e.target.value as PaSystem | "" }))} style={{ ...inputStyle, background: "#fff" }}>
+                      <option value="">None</option>
+                      <option value="FULL_PA">Full PA</option>
+                      <option value="LIMITED_PA">Limited PA</option>
+                      <option value="NO_PA">No PA</option>
+                    </select>
                   </div>
                   <div>
                     <label style={labelStyle}>Additional notes</label>
@@ -748,10 +729,11 @@ export default function Venues() {
                     ) : (
                       <div style={{ fontSize: 12, color: "#d1d5db", marginBottom: 6 }}>Add contact number</div>
                     )}
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <PaBadge pa={v.paSystem} />
-                      <LiveBadge live={v.isLiveVenue} />
-                    </div>
+                    {v.paSystem && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <PaBadge pa={v.paSystem} />
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 2 }}>
                     {status === "set-up" && (
