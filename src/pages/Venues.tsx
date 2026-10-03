@@ -261,7 +261,9 @@ function DetailPanel({
 }) {
   const [tab, setTab] = useState<DetailTab>("details");
   const [editSection, setEditSection] = useState<EditSection>(null);
+  const [editingAll, setEditingAll] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [events, setEvents] = useState<VenueEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -279,6 +281,8 @@ function DetailPanel({
     setTechDraft({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "" });
     setNotesDraft(venue.notes ?? "");
     setEditSection(null);
+    setEditingAll(false);
+    setSaveError(null);
     setEvents([]);
   }, [venue.id]);
 
@@ -290,14 +294,70 @@ function DetailPanel({
       .catch(() => setEventsLoading(false));
   }, [tab, venue.id]);
 
-  async function saveSection(patch: Record<string, unknown>) {
+  async function saveSection(patch: Record<string, unknown>, options?: { exitGlobal?: boolean }) {
     setSaving(true);
+    setSaveError(null);
     const result = await apiPatch<Venue, Record<string, unknown>>(`/venues/${venue.id}`, patch);
     setSaving(false);
     if (result.ok) {
       onUpdate({ ...result.data, user: venue.user });
       setEditSection(null);
+      if (options?.exitGlobal) setEditingAll(false);
+      return true;
     }
+    setSaveError(result.message);
+    return false;
+  }
+
+  function beginEditVenue() {
+    setSaveError(null);
+    if (tab === "notes") {
+      setNotesDraft(venue.notes ?? "");
+      setEditingAll(false);
+      setEditSection("notes");
+      return;
+    }
+    if (tab !== "details") setTab("details");
+    setBasicDraft(editSection === "basic" ? basicDraft : { name: venue.name, postcode: venue.postcode });
+    setContactDraft(
+      editSection === "contact"
+        ? contactDraft
+        : { phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" }
+    );
+    setTechDraft(
+      editSection === "technical"
+        ? techDraft
+        : { paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "" }
+    );
+    setEditSection(null);
+    setEditingAll(true);
+  }
+
+  function cancelGlobalEdit() {
+    setBasicDraft({ name: venue.name, postcode: venue.postcode });
+    setContactDraft({ phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" });
+    setTechDraft({ paSystem: venue.paSystem ?? ("" as PaSystem | ""), technicalNotes: venue.technicalNotes ?? "" });
+    setEditingAll(false);
+    setSaveError(null);
+  }
+
+  function saveAllSections() {
+    if (!basicDraft.name.trim()) {
+      setSaveError("Venue name is required.");
+      return;
+    }
+    if (!basicDraft.postcode.trim()) {
+      setSaveError("Postcode is required.");
+      return;
+    }
+    void saveSection({
+      name: basicDraft.name.trim(),
+      postcode: basicDraft.postcode.trim(),
+      phone: contactDraft.phone.trim() || null,
+      contactEmail: contactDraft.contactEmail.trim() || null,
+      paSystem: techDraft.paSystem || null,
+      technicalNotes: techDraft.technicalNotes.trim() || null,
+    }, { exitGlobal: true });
   }
 
   async function handleDelete() {
@@ -348,18 +408,22 @@ function DetailPanel({
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+        {saveError && !editingAll && (
+          <p style={{ color: "#c41e3a", fontSize: 13, margin: "0 0 12px" }}>{saveError}</p>
+        )}
         {tab === "details" && (
           <div style={{ display: "grid", gap: 14 }}>
             {/* Basic information */}
             <Section
               title="Basic information"
-              editing={editSection === "basic"}
-              onEdit={() => { setBasicDraft({ name: venue.name, postcode: venue.postcode }); setEditSection("basic"); }}
-              onCancel={() => setEditSection(null)}
+              editing={editingAll || editSection === "basic"}
+              suppressActions={editingAll}
+              onEdit={() => { setBasicDraft({ name: venue.name, postcode: venue.postcode }); setEditingAll(false); setEditSection("basic"); }}
+              onCancel={() => { setSaveError(null); setEditSection(null); }}
               onSave={() => saveSection({ name: basicDraft.name, postcode: basicDraft.postcode })}
               saving={saving}
             >
-              {editSection === "basic" ? (
+              {editingAll || editSection === "basic" ? (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
                     <label style={labelStyle}>Venue name</label>
@@ -381,13 +445,14 @@ function DetailPanel({
             {/* Contact */}
             <Section
               title="Contact"
-              editing={editSection === "contact"}
-              onEdit={() => { setContactDraft({ phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" }); setEditSection("contact"); }}
-              onCancel={() => setEditSection(null)}
+              editing={editingAll || editSection === "contact"}
+              suppressActions={editingAll}
+              onEdit={() => { setContactDraft({ phone: venue.phone ?? "", contactEmail: venue.contactEmail ?? "" }); setEditingAll(false); setEditSection("contact"); }}
+              onCancel={() => { setSaveError(null); setEditSection(null); }}
               onSave={() => saveSection({ phone: contactDraft.phone || null, contactEmail: contactDraft.contactEmail || null })}
               saving={saving}
             >
-              {editSection === "contact" ? (
+              {editingAll || editSection === "contact" ? (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div>
                     <label style={labelStyle}>Contact number</label>
@@ -409,13 +474,14 @@ function DetailPanel({
             {/* Technical requirements */}
             <Section
               title="Technical requirements"
-              editing={editSection === "technical"}
-              onEdit={() => { setTechDraft({ paSystem: venue.paSystem ?? "", technicalNotes: venue.technicalNotes ?? "" }); setEditSection("technical"); }}
-              onCancel={() => setEditSection(null)}
+              editing={editingAll || editSection === "technical"}
+              suppressActions={editingAll}
+              onEdit={() => { setTechDraft({ paSystem: venue.paSystem ?? "", technicalNotes: venue.technicalNotes ?? "" }); setEditingAll(false); setEditSection("technical"); }}
+              onCancel={() => { setSaveError(null); setEditSection(null); }}
               onSave={() => saveSection({ paSystem: techDraft.paSystem || null, technicalNotes: techDraft.technicalNotes || null })}
               saving={saving}
             >
-              {editSection === "technical" ? (
+              {editingAll || editSection === "technical" ? (
                 <div style={{ display: "grid", gap: 10 }}>
                   <div>
                     <label style={labelStyle}>PA system</label>
@@ -448,8 +514,9 @@ function DetailPanel({
           <Section
             title="Notes"
             editing={editSection === "notes"}
-            onEdit={() => { setNotesDraft(venue.notes ?? ""); setEditSection("notes"); }}
-            onCancel={() => setEditSection(null)}
+            suppressActions={editingAll}
+            onEdit={() => { setNotesDraft(venue.notes ?? ""); setEditingAll(false); setEditSection("notes"); }}
+            onCancel={() => { setSaveError(null); setEditSection(null); }}
             onSave={() => saveSection({ notes: notesDraft || null })}
             saving={saving}
           >
@@ -565,15 +632,25 @@ function DetailPanel({
             Delete venue
           </button>
         )}
-        <button
-          onClick={() => setEditSection(tab === "details" ? "basic" : tab === "notes" ? "notes" : null)}
-          style={{ display: "flex", alignItems: "center", gap: 6, ...primaryBtnStyle }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
-          Edit venue
-        </button>
+        {editingAll ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {saveError && <span style={{ fontSize: 13, color: "#c41e3a", maxWidth: 180 }}>{saveError}</span>}
+            <button onClick={cancelGlobalEdit} disabled={saving} style={cancelBtnStyle}>Cancel</button>
+            <button onClick={saveAllSections} disabled={saving} style={primaryBtnStyle}>
+              {saving ? "Saving…" : "Save venue"}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={beginEditVenue}
+            style={{ display: "flex", alignItems: "center", gap: 6, ...primaryBtnStyle }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit venue
+          </button>
+        )}
       </div>
     </div>
   );
@@ -588,6 +665,7 @@ function Section({
   onSave,
   saving,
   hideEdit,
+  suppressActions,
 }: {
   title: string;
   children: React.ReactNode;
@@ -597,15 +675,16 @@ function Section({
   onSave: () => void;
   saving: boolean;
   hideEdit?: boolean;
+  suppressActions?: boolean;
 }) {
   return (
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
         <span style={{ fontWeight: 600, fontSize: 13, color: "#111827" }}>{title}</span>
-        {!hideEdit && !editing && (
+        {!suppressActions && !hideEdit && !editing && (
           <button onClick={onEdit} style={editBtnStyle}>Edit</button>
         )}
-        {editing && (
+        {!suppressActions && editing && (
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onCancel} style={cancelBtnStyle}>Cancel</button>
             <button onClick={onSave} disabled={saving} style={primaryBtnStyle}>{saving ? "Saving…" : "Save"}</button>
