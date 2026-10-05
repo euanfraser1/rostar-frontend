@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiGet, apiPost } from "../api/http";
+import { notifyNeedsAttentionChanged } from "../components/NeedsAttention";
 
 type Venue = { id: string; name: string; postcode: string };
 type Artist = { id: string; name: string };
@@ -407,6 +408,7 @@ export default function NewEvent() {
       return;
     }
 
+    notifyNeedsAttentionChanged();
     navigate("/calendar");
   }
 

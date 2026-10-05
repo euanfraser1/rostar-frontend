@@ -14,6 +14,7 @@ import Invoices from "./pages/Invoices";
 import { fetchCurrentUser, type AuthUser, logout } from "./api/auth";
 import { apiGet } from "./api/http";
 import UpcomingEvents from "./components/UpcomingEvents";
+import NeedsAttention from "./components/NeedsAttention";
 import UserMenu from "./components/UserMenu";
 import { colors } from "./components/ui";
 
@@ -292,7 +293,7 @@ function AppShell({
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <nav
           style={{
-            width: 240,
+            width: 300,
             background: colors.sidebarBg,
             borderRight: `1px solid ${colors.border}`,
             padding: "16px 12px",
@@ -303,7 +304,18 @@ function AppShell({
             overflow: "hidden",
           }}
         >
-          {sidebar}
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowX: "hidden",
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {sidebar}
+          </div>
         </nav>
 
         <main style={{ flex: 1, overflow: "auto", padding: "28px 32px", background: colors.pageBg }}>
@@ -323,22 +335,27 @@ function AdminLayout({ user, onLogout }: { user: AuthUser; onLogout: () => void 
       onLogout={onLogout}
       sidebar={
         <>
-          <NavLink to="/calendar" style={sidebarNavStyle}>
-            <CalendarIcon /> Calendar
-          </NavLink>
-          <NavLink to="/events/new" style={sidebarNavStyle}>
-            <BookingsIcon /> Bookings
-          </NavLink>
-          <NavLink to="/venues" style={sidebarNavStyle}>
-            <VenuesIcon /> Venues
-          </NavLink>
-          <NavLink to="/artists" style={sidebarNavStyle}>
-            <ArtistsIcon /> Artists
-          </NavLink>
-          <NavLink to="/invoices" style={sidebarNavStyle}>
-            <InvoicesIcon /> Invoices
-          </NavLink>
-          <UpcomingEvents portal="admin" />
+          <div style={{ flexShrink: 0 }}>
+            <NavLink to="/calendar" style={sidebarNavStyle}>
+              <CalendarIcon /> Calendar
+            </NavLink>
+            <NavLink to="/events/new" style={sidebarNavStyle}>
+              <BookingsIcon /> Bookings
+            </NavLink>
+            <NavLink to="/venues" style={sidebarNavStyle}>
+              <VenuesIcon /> Venues
+            </NavLink>
+            <NavLink to="/artists" style={sidebarNavStyle}>
+              <ArtistsIcon /> Artists
+            </NavLink>
+            <NavLink to="/invoices" style={sidebarNavStyle}>
+              <InvoicesIcon /> Invoices
+            </NavLink>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowX: "hidden", overflowY: "auto" }}>
+            <UpcomingEvents portal="admin" />
+            <NeedsAttention />
+          </div>
         </>
       }
     />

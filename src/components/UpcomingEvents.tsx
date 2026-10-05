@@ -71,8 +71,6 @@ export default function UpcomingEvents({ portal }: { portal: Portal }) {
         marginTop: 12,
         display: "flex",
         flexDirection: "column",
-        minHeight: 0,
-        flex: 1,
       }}
     >
       <div style={{ height: 1, background: colors.border, margin: "8px 4px 14px" }} />
@@ -90,7 +88,7 @@ export default function UpcomingEvents({ portal }: { portal: Portal }) {
         Upcoming
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+      <div>
         {loading && (
           <div style={{ fontSize: 12, color: colors.textSubtle, padding: "0 4px" }}>Loading…</div>
         )}

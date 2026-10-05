@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiGet, apiPatch, apiPost } from "../api/http";
+import { notifyNeedsAttentionChanged } from "../components/NeedsAttention";
 import { Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
@@ -82,6 +83,7 @@ function formatFee(fee: string | null) {
 
 export default function Calendar() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [events, setEvents] = useState<GigEvent[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
@@ -186,6 +188,26 @@ export default function Calendar() {
   const todayKey = localDateKey(new Date());
   const selectedEvents = selectedDayKey ? eventsByDay.get(selectedDayKey) ?? [] : [];
 
+  const focusDate = searchParams.get("date");
+  const focusEventId = searchParams.get("event");
+
+  useEffect(() => {
+    if (!focusDate || !/^\d{4}-\d{2}-\d{2}$/.test(focusDate)) return;
+    const [y, m, d] = focusDate.split("-").map(Number);
+    const parsed = new Date(y, m - 1, d);
+    if (parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) return;
+    setViewDate((current) =>
+      current.getFullYear() === y && current.getMonth() === m - 1 ? current : new Date(y, m - 1, 1)
+    );
+    setSelectedDayKey(focusDate);
+    setAssigningId(null);
+  }, [focusDate]);
+
+  useEffect(() => {
+    if (!focusEventId || !selectedDayKey) return;
+    document.getElementById(`event-${focusEventId}`)?.scrollIntoView({ block: "nearest" });
+  }, [focusEventId, selectedDayKey, events]);
+
   function prevMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)); setSelectedDayKey(null); }
   function nextMonth() { setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)); setSelectedDayKey(null); }
   function goToday() { setViewDate(new Date()); setSelectedDayKey(localDateKey(new Date())); }
@@ -273,6 +295,7 @@ export default function Calendar() {
     setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data.event : e)));
     setOfferArtistByEvent((prev) => ({ ...prev, [eventId]: "" }));
     await loadBookingState(eventId);
+    notifyNeedsAttentionChanged();
   }
 
   async function withdrawOffer(eventId: string, offerId: string) {
@@ -291,6 +314,7 @@ export default function Calendar() {
       setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data.event! : e)));
     }
     await loadBookingState(eventId);
+    notifyNeedsAttentionChanged();
   }
 
   function openAssign(ev: GigEvent) {
@@ -328,6 +352,7 @@ export default function Calendar() {
     setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
     setAssigningId(null);
     await loadBookingState(eventId);
+    notifyNeedsAttentionChanged();
   }
 
   async function clearArtist(eventId: string) {
@@ -338,6 +363,7 @@ export default function Calendar() {
     if (result.ok) {
       setEvents((prev) => prev.map((e) => (e.id === eventId ? result.data : e)));
       await loadBookingState(eventId);
+      notifyNeedsAttentionChanged();
     }
   }
 
@@ -498,9 +524,12 @@ export default function Calendar() {
               return (
                 <div
                   key={ev.id}
+                  id={`event-${ev.id}`}
                   style={{
                     padding: "12px 16px", borderRadius: 10,
                     background: cfg.bg, borderLeft: `4px solid ${cfg.dot}`,
+                    outline: focusEventId === ev.id ? "2px solid #a10000" : "none",
+                    outlineOffset: 2,
                   }}
                 >
                   {/* Header row */}
