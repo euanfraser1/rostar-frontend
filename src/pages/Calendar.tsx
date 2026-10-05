@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiGet, apiPatch, apiPost } from "../api/http";
 import { notifyNeedsAttentionChanged } from "../components/NeedsAttention";
-import { Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 
 type EventStatus = "UNBOOKED" | "OFFERED" | "CONFIRMED";
 
@@ -372,11 +372,45 @@ export default function Calendar() {
       {error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
       {/* Nav */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-        <button onClick={prevMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>←</button>
-        <button onClick={goToday} style={{ padding: "6px 10px", borderRadius: 8 }}>Today</button>
-        <button onClick={nextMonth} style={{ padding: "6px 10px", borderRadius: 8 }}>→</button>
-        <div style={{ marginLeft: 12, fontWeight: 600 }}>{monthLabel}</div>
+      <div style={{ display: "flex", gap: 2, alignItems: "center", marginBottom: 12 }}>
+        <button
+          type="button"
+          onClick={prevMonth}
+          aria-label="Previous month"
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 28, height: 28, padding: 0, background: "transparent",
+            border: "none", borderRadius: 6, color: "#6b7280", cursor: "pointer",
+          }}
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div style={{ fontWeight: 700, fontSize: 16, color: "#111827", padding: "0 6px" }}>
+          {monthLabel}
+        </div>
+        <button
+          type="button"
+          onClick={nextMonth}
+          aria-label="Next month"
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 28, height: 28, padding: 0, background: "transparent",
+            border: "none", borderRadius: 6, color: "#6b7280", cursor: "pointer",
+          }}
+        >
+          <ChevronRight size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={goToday}
+          style={{
+            marginLeft: 10, padding: "6px 12px", borderRadius: 8,
+            background: "#fff", border: "1px solid #e5e7eb",
+            fontWeight: 600, fontSize: 13, color: "#111827", cursor: "pointer",
+          }}
+        >
+          Today
+        </button>
         {loading && <span style={{ marginLeft: 8, fontSize: 13, opacity: 0.6 }}>Loading…</span>}
 
         {/* Colour key */}
@@ -441,8 +475,9 @@ export default function Calendar() {
               onClick={() => { setSelectedDayKey(key); setAssigningId(null); }}
               style={{
                 textAlign: "left", minHeight: 96, padding: 8, borderRadius: 10,
-                border: isSelected ? "2px solid #a10000" : "1px solid #eee",
-                background: "#fff", cursor: "pointer",
+                border: isSelected ? "1px solid #e7a8b0" : "1px solid #eee",
+                background: isSelected ? "#fdecea" : "#fff",
+                cursor: "pointer",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
@@ -462,14 +497,26 @@ export default function Calendar() {
                     <div
                       key={ev.id}
                       style={{
+                        display: "flex", alignItems: "center", gap: 4,
                         fontSize: 11, padding: "3px 6px", borderRadius: 6,
-                        background: cfg.bg, color: cfg.color,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        borderLeft: `3px solid ${cfg.dot}`,
+                        background: isSelected ? "#f6cdd2" : cfg.bg,
+                        color: isSelected ? "#a10000" : cfg.color,
+                        overflow: "hidden",
+                        borderLeft: isSelected ? "none" : `3px solid ${cfg.dot}`,
                       }}
                       title={`${formatTime(ev.startDateTime)} — ${eventLabel(ev)} [${ev.status}]`}
                     >
-                      {formatTime(ev.startDateTime)} {eventLabel(ev)}
+                      {isSelected && (
+                        <span
+                          style={{
+                            width: 6, height: 6, borderRadius: "50%",
+                            background: "#c41e3a", flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {formatTime(ev.startDateTime)} {eventLabel(ev)}
+                      </span>
                     </div>
                   );
                 })}
@@ -528,8 +575,6 @@ export default function Calendar() {
                   style={{
                     padding: "12px 16px", borderRadius: 10,
                     background: cfg.bg, borderLeft: `4px solid ${cfg.dot}`,
-                    outline: focusEventId === ev.id ? "2px solid #a10000" : "none",
-                    outlineOffset: 2,
                   }}
                 >
                   {/* Header row */}
