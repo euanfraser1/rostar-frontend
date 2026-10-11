@@ -5,8 +5,8 @@ import { login } from "../api/auth";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("adminpassword");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,12 +65,6 @@ export default function Login() {
           {submitting ? "Logging in..." : "Login"}
         </button>
       </form>
-      <p style={{ marginTop: 16, fontSize: 12, color: "#555" }}>
-        Dev accounts: <br />
-        Admin – admin@example.com / adminpassword <br />
-        Artist – artist@example.com / artistpassword <br />
-        Venue – ship@venue.com / theship
-      </p>
     </div>
   );
 }
